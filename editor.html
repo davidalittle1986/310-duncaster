@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hotspot Editor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #f0ede8; font-family: Inter, sans-serif; font-size: 14px; }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 24px; background: #1a1a1a; border-bottom: 1px solid #2c2c2c;
+      flex-wrap: wrap;
+    }
+    .toolbar h1 { font-size: 1rem; font-weight: 500; }
+    .floor-btns { display: flex; gap: 8px; }
+    .floor-btn {
+      padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+      border: 1px solid #444; background: #222; color: #aaa;
+    }
+    .floor-btn.active { background: #c9a96e; color: #111; border-color: #c9a96e; font-weight: 600; }
+    .copy-btn {
+      margin-left: auto; padding: 8px 20px; background: #c9a96e; color: #111;
+      border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.85rem;
+    }
+    .copy-btn:hover { background: #e0c088; }
+    .hint { font-size: 0.75rem; color: #666; }
+
+    .stage {
+      position: relative; display: inline-block;
+      margin: 24px auto; display: block; width: fit-content; margin: 24px auto;
+    }
+    .stage img { display: block; max-height: calc(100vh - 120px); max-width: 100%; filter: invert(1) sepia(0.15) brightness(0.92); }
+
+    .hotspot {
+      position: absolute;
+      width: 76px; height: 76px;
+      border-radius: 50%;
+      background: rgba(201,169,110,0.35);
+      border: 3px solid #e0c088;
+      cursor: grab;
+      transform: translate(-50%, -50%);
+      display: flex; align-items: center; justify-content: center;
+      text-align: center;
+      font-size: 11px; font-weight: 700; color: #fff;
+      line-height: 1.2;
+      user-select: none;
+      transition: background 0.15s;
+      padding: 8px;
+    }
+    .hotspot:hover { background: rgba(201,169,110,0.6); }
+    .hotspot:active { cursor: grabbing; }
+
+    #output {
+      display: none;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      align-items: center; justify-content: center; z-index: 100;
+    }
+    #output.show { display: flex; }
+    .output-box {
+      background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+      padding: 24px; max-width: 600px; width: 90%;
+    }
+    .output-box h2 { margin-bottom: 12px; font-size: 1rem; color: #c9a96e; }
+    .output-box pre {
+      background: #111; padding: 16px; border-radius: 4px; overflow: auto;
+      font-size: 0.75rem; line-height: 1.6; max-height: 400px; color: #ccc;
+    }
+    .output-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .output-actions button {
+      padding: 8px 18px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; border: none;
+    }
+    .btn-copy { background: #c9a96e; color: #111; font-weight: 600; }
+    .btn-close { background: #333; color: #ccc; }
+    .copied { background: #4caf7d !important; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>Hotspot Editor</h1>
+  <div class="floor-btns">
+    <button class="floor-btn active" onclick="loadFloor('downstairs')">Downstairs</button>
+    <button class="floor-btn" onclick="loadFloor('upstairs')">Upstairs</button>
+  </div>
+  <span class="hint">Drag circles to the correct room, then copy positions.</span>
+  <button class="copy-btn" onclick="showOutput()">Copy Positions</button>
+</div>
+
+<div id="stage-wrap" style="overflow:auto; padding: 0 24px 24px;">
+  <div class="stage" id="stage">
+    <img id="fp-img" src="" alt="Floor plan" />
+    <!-- hotspots injected here -->
+  </div>
+</div>
+
+<div id="output">
+  <div class="output-box">
+    <h2>Paste this to Claude</h2>
+    <pre id="output-text"></pre>
+    <div class="output-actions">
+      <button class="btn-copy" id="copy-btn" onclick="copyText()">Copy to Clipboard</button>
+      <button class="btn-close" onclick="closeOutput()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  let currentFloor = 'downstairs';
+  let positions = {};
+
+  function loadFloor(floorKey) {
+    currentFloor = floorKey;
+    const floor = SITE.floors[floorKey];
+
+    document.querySelectorAll('.floor-btn').forEach(b =>
+      b.classList.toggle('active', b.textContent.toLowerCase() === floorKey));
+
+    const img = document.getElementById('fp-img');
+    img.src = floor.floorplan;
+
+    // Remove old hotspots
+    document.querySelectorAll('.hotspot').forEach(h => h.remove());
+
+    // Init positions from config
+    positions[floorKey] = positions[floorKey] || {};
+    floor.rooms.forEach(room => {
+      if (!positions[floorKey][room.id]) {
+        positions[floorKey][room.id] = { x: room.x, y: room.y, label: room.label };
+      }
+    });
+
+    img.onload = () => renderHotspots(floor);
+    if (img.complete) renderHotspots(floor);
+  }
+
+  function renderHotspots(floor) {
+    document.querySelectorAll('.hotspot').forEach(h => h.remove());
+    const stage = document.getElementById('stage');
+    const img   = document.getElementById('fp-img');
+
+    floor.rooms.forEach(room => {
+      const pos = positions[currentFloor][room.id];
+      const dot = document.createElement('div');
+      dot.className = 'hotspot';
+      dot.dataset.id = room.id;
+      dot.textContent = room.label;
+      dot.style.left = (pos.x / 1000 * img.offsetWidth)  + 'px';
+      dot.style.top  = (pos.y / 1000 * img.offsetHeight) + 'px';
+      stage.appendChild(dot);
+      makeDraggable(dot);
+    });
+  }
+
+  function makeDraggable(el) {
+    let startX, startY, startL, startT;
+
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      startX = e.clientX; startY = e.clientY;
+      startL = parseFloat(el.style.left);
+      startT = parseFloat(el.style.top);
+
+      function onMove(e) {
+        const img = document.getElementById('fp-img');
+        const newL = Math.max(0, Math.min(img.offsetWidth,  startL + e.clientX - startX));
+        const newT = Math.max(0, Math.min(img.offsetHeight, startT + e.clientY - startY));
+        el.style.left = newL + 'px';
+        el.style.top  = newT + 'px';
+        // Save as 0-1000 coords
+        positions[currentFloor][el.dataset.id].x = Math.round(newL / img.offsetWidth  * 1000);
+        positions[currentFloor][el.dataset.id].y = Math.round(newT / img.offsetHeight * 1000);
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function showOutput() {
+    let out = '';
+    Object.entries(positions).forEach(([floorKey, rooms]) => {
+      out += `// ${floorKey}\n`;
+      Object.entries(rooms).forEach(([id, p]) => {
+        out += `{ id: "${id}", label: "${p.label}", x: ${p.x}, y: ${p.y} },\n`;
+      });
+      out += '\n';
+    });
+    document.getElementById('output-text').textContent = out.trim();
+    document.getElementById('output').classList.add('show');
+  }
+
+  function copyText() {
+    navigator.clipboard.writeText(document.getElementById('output-text').textContent);
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+  }
+
+  function closeOutput() {
+    document.getElementById('output').classList.remove('show');
+  }
+
+  loadFloor('downstairs');
+</script>
+</body>
+</html>

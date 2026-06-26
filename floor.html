@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Floor Plan — 310 Duncaster</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Loading screen -->
+  <div class="loader" id="loader">
+    <div class="loader-inner">
+      <div class="loader-title">310 Duncaster</div>
+      <div class="loader-bar"><div class="loader-fill" id="loader-fill"></div></div>
+    </div>
+  </div>
+
+  <div class="floor-page page-enter" id="floor-page" style="opacity:0">
+    <nav class="nav-bar">
+      <div class="nav-crumb">
+        <a href="index.html">Home</a>
+        <span class="nav-sep">›</span>
+        <span id="floor-title">—</span>
+      </div>
+    </nav>
+    <div class="nav-page-title" id="floor-title-large">—</div>
+
+    <div class="floorplan-wrapper" id="fp-wrapper">
+      <div class="floorplan-zoom-container" id="zoom-container">
+        <img id="floorplan-img" src="" alt="Floor plan" />
+        <svg class="hotspot-svg" id="hotspot-svg" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+        </svg>
+      </div>
+      <p class="hotspot-hint">Tap a room to view construction photos</p>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    const floorKey = location.hash.slice(1) || 'downstairs';
+    const floor    = SITE.floors[floorKey];
+    if (!floor) location.href = 'index.html';
+
+    document.title = `${floor.label} — 310 Duncaster`;
+    document.getElementById('floor-title').textContent      = floor.label;
+    document.getElementById('floor-title-large').textContent = floor.label;
+
+    const img = document.getElementById('floorplan-img');
+    img.src   = floor.floorplan;
+
+    // Loading screen
+    const loader     = document.getElementById('loader');
+    const loaderFill = document.getElementById('loader-fill');
+    const page       = document.getElementById('floor-page');
+
+    loaderFill.style.width = '30%';
+    img.onload = () => {
+      loaderFill.style.width = '100%';
+      setTimeout(() => {
+        loader.style.opacity = '0';
+        loader.style.pointerEvents = 'none';
+        page.style.opacity = '1';
+        page.style.transition = 'opacity 0.4s';
+        setTimeout(() => loader.style.display = 'none', 400);
+      }, 300);
+      buildHotspots();
+    };
+    if (img.complete) img.onload();
+
+    // Build SVG hotspots
+    function buildHotspots() {
+      const svg = document.getElementById('hotspot-svg');
+      floor.rooms.forEach(room => {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('class', 'hotspot-group');
+        g.setAttribute('data-room', room.id);
+        g.setAttribute('role', 'button');
+        g.setAttribute('tabindex', '0');
+        g.setAttribute('aria-label', room.label);
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('class', 'hotspot-circle');
+        circle.setAttribute('cx', room.x);
+        circle.setAttribute('cy', room.y);
+        circle.setAttribute('r', '38');
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('class', 'hotspot-label');
+        text.setAttribute('x', room.x);
+        text.setAttribute('y', room.y);
+        text.textContent = room.label;
+
+        g.appendChild(circle);
+        g.appendChild(text);
+        svg.appendChild(g);
+
+        g.addEventListener('click', () => navigateToRoom(room, floorKey));
+        g.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') navigateToRoom(room, floorKey);
+        });
+      });
+    }
+
+    function navigateToRoom(room, floor) {
+      const container = document.getElementById('zoom-container');
+      const img       = document.getElementById('floorplan-img');
+      const pctX = room.x / 1000;
+      const pctY = room.y / 1000;
+      const originX = pctX * img.offsetWidth;
+      const originY = pctY * img.offsetHeight;
+      container.style.transformOrigin = `${originX}px ${originY}px`;
+      container.style.transform = 'scale(3.5)';
+      container.classList.add('zooming');
+      setTimeout(() => {
+        location.href = `gallery.html#${floor}/${room.id}`;
+      }, 550);
+    }
+
+    // Back-swipe gesture
+    let touchStartX = 0;
+    document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    document.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (dx > 80 && touchStartX < 40) history.back();
+    }, { passive: true });
+
+    // Pinch-to-zoom on floor plan
+    const wrapper  = document.getElementById('fp-wrapper');
+    let fpScale    = 1, fpLastDist = 0;
+    let fpOriginX  = 0, fpOriginY  = 0;
+    let isPinching = false;
+
+    wrapper.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) {
+        isPinching = true;
+        fpLastDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        fpOriginX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        fpOriginY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const zc = document.getElementById('zoom-container');
+        const rect = zc.getBoundingClientRect();
+        zc.style.transformOrigin = `${fpOriginX - rect.left}px ${fpOriginY - rect.top}px`;
+      }
+    }, { passive: true });
+
+    wrapper.addEventListener('touchmove', e => {
+      if (e.touches.length === 2 && isPinching) {
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        fpScale = Math.min(5, Math.max(1, fpScale * (dist / fpLastDist)));
+        document.getElementById('zoom-container').style.transform = `scale(${fpScale})`;
+        fpLastDist = dist;
+      }
+    }, { passive: false });
+
+    wrapper.addEventListener('touchend', e => {
+      if (e.touches.length < 2) {
+        isPinching = false;
+        if (fpScale <= 1.05) {
+          fpScale = 1;
+          const zc = document.getElementById('zoom-container');
+          zc.style.transform = '';
+          zc.style.transformOrigin = '';
+        }
+      }
+    }, { passive: true });
+  </script>
+</body>
+</html>

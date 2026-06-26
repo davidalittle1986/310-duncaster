@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>310 Duncaster — Construction Reference</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="home page-enter">
+    <header class="home-header">
+      <h1>310 Duncaster</h1>
+      <p>Construction Reference</p>
+    </header>
+
+    <div class="floor-cards">
+      <div class="floor-card" onclick="goFloor('downstairs')" role="button" tabindex="0">
+        <img src="images/downstairs-floorplan.jpg" alt="Downstairs floor plan" loading="lazy" />
+        <div class="floor-card-label">
+          <h2>Downstairs</h2>
+          <span>10 Rooms</span>
+        </div>
+        <div class="floor-card-arrow">→</div>
+      </div>
+
+      <div class="floor-card" onclick="goFloor('upstairs')" role="button" tabindex="0">
+        <img src="images/upstairs-floorplan.jpg" alt="Upstairs floor plan" loading="lazy" />
+        <div class="floor-card-label">
+          <h2>Upstairs</h2>
+          <span>13 Rooms</span>
+        </div>
+        <div class="floor-card-arrow">→</div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script>
+    function goFloor(floor) {
+      window.location.href = `floor.html#${floor}`;
+    }
+    // Keyboard nav
+    document.querySelectorAll('.floor-card').forEach(card => {
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') card.click();
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Gallery — 310 Duncaster</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="gallery-page page-enter">
+    <nav class="nav-bar">
+      <div class="nav-crumb">
+        <a href="index.html">Home</a>
+        <span class="nav-sep">›</span>
+        <a id="nav-floor" href="#">—</a>
+        <span class="nav-sep">›</span>
+        <span id="nav-room">—</span>
+      </div>
+    </nav>
+    <div class="nav-page-title" id="room-title">—</div>
+
+    <div class="gallery-grid" id="gallery-grid"></div>
+  </div>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-label="Photo viewer">
+    <button class="lightbox-close" id="lb-close" aria-label="Close">✕</button>
+    <button class="lightbox-prev" id="lb-prev" aria-label="Previous">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 4l-6 6 6 6"/></svg>
+    </button>
+    <img id="lb-img" src="" alt="" />
+    <button class="lightbox-next" id="lb-next" aria-label="Next">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 4l6 6-6 6"/></svg>
+    </button>
+    <div class="lightbox-counter" id="lb-counter"></div>
+    <div class="lightbox-date" id="lb-date"></div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    const [floorKey = 'downstairs', roomId = ''] = location.hash.slice(1).split('/');
+    const floor = SITE.floors[floorKey];
+    const room  = floor?.rooms.find(r => r.id === roomId);
+
+    if (!floor || !room) {
+      document.getElementById('room-title').textContent = 'Room not found';
+    } else {
+      document.title = `${room.label} — 310 Duncaster`;
+      document.getElementById('room-title').textContent = room.label;
+      document.getElementById('nav-room').textContent   = room.label;
+      const floorLink = document.getElementById('nav-floor');
+      floorLink.textContent = floor.label;
+      floorLink.href = `floor.html#${floorKey}`;
+      loadPhotos(floorKey, roomId);
+    }
+
+    // Back-swipe: track touch start X
+    let touchStartX = 0;
+    document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    document.addEventListener('touchend', e => {
+      if (lightbox.classList.contains('active')) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (dx > 80 && touchStartX < 40) history.back();
+    }, { passive: true });
+
+    let photos = [];
+    let current = 0;
+
+    async function loadPhotos(floorKey, roomId) {
+      const grid = document.getElementById('gallery-grid');
+      try {
+        const res = await fetch('photos/manifest.json');
+        if (!res.ok) throw new Error('no manifest');
+        const manifest = await res.json();
+        const key = `${floorKey}/${roomId}`;
+        const entries = manifest[key] || [];
+        // Support both old string format and new {file, date} format
+        photos = entries.map(e => typeof e === 'string'
+          ? { src: `photos/${floorKey}/${roomId}/${e}`, date: null }
+          : { src: `photos/${floorKey}/${roomId}/${e.file}`, date: e.date || null }
+        );
+      } catch { photos = []; }
+
+      if (photos.length === 0) {
+        grid.innerHTML = `
+          <div class="gallery-empty">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="6" y="10" width="36" height="28" rx="2"/>
+              <circle cx="18" cy="20" r="3"/>
+              <path d="M6 30l10-8 8 6 6-4 12 10"/>
+            </svg>
+            <p>No photos yet</p>
+          </div>`;
+        return;
+      }
+
+      photos.forEach(({ src }, i) => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = `Photo ${i + 1}`;
+        img.loading = 'lazy';
+        item.appendChild(img);
+        item.addEventListener('click', () => openLightbox(i));
+        grid.appendChild(item);
+      });
+    }
+
+    // ── Lightbox ────────────────────────────────────────────────
+    const lightbox = document.getElementById('lightbox');
+    const lbImg    = document.getElementById('lb-img');
+    const lbCount  = document.getElementById('lb-counter');
+    const lbDate   = document.getElementById('lb-date');
+
+    function openLightbox(i) {
+      current = i;
+      showPhoto();
+      lightbox.classList.add('active');
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+
+    function showPhoto() {
+      lbImg.src = photos[current].src;
+      lbCount.textContent = `${current + 1} / ${photos.length}`;
+      lbDate.textContent  = photos[current].date || '';
+    }
+
+    function closeLightbox() {
+      lightbox.classList.remove('active');
+      if (document.fullscreenElement) document.exitFullscreen?.();
+    }
+
+    function prev() { current = (current - 1 + photos.length) % photos.length; showPhoto(); }
+    function next() { current = (current + 1) % photos.length; showPhoto(); }
+
+    document.getElementById('lb-close').onclick = closeLightbox;
+    document.getElementById('lb-prev').onclick  = prev;
+    document.getElementById('lb-next').onclick  = next;
+    lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
+
+    // Keyboard
+    document.addEventListener('keydown', e => {
+      if (!lightbox.classList.contains('active')) return;
+      if (e.key === 'ArrowLeft')  prev();
+      if (e.key === 'ArrowRight') next();
+      if (e.key === 'Escape')     closeLightbox();
+    });
+
+    // Swipe in lightbox
+    let lbTouchX = 0, lbTouchY = 0;
+    lightbox.addEventListener('touchstart', e => {
+      lbTouchX = e.touches[0].clientX;
+      lbTouchY = e.touches[0].clientY;
+    }, { passive: true });
+
+    lightbox.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - lbTouchX;
+      const dy = e.changedTouches[0].clientY - lbTouchY;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+        dx < 0 ? next() : prev();
+      }
+    }, { passive: true });
+
+    // Pinch-to-zoom in lightbox
+    let lbScale = 1, lbLastDist = 0;
+    lightbox.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) {
+        lbLastDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    }, { passive: true });
+
+    lightbox.addEventListener('touchmove', e => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        lbScale = Math.min(4, Math.max(1, lbScale * (dist / lbLastDist)));
+        lbImg.style.transform = `scale(${lbScale})`;
+        lbLastDist = dist;
+      }
+    }, { passive: false });
+
+    lightbox.addEventListener('touchend', e => {
+      if (e.touches.length < 2 && lbScale <= 1.05) {
+        lbScale = 1;
+        lbImg.style.transform = 'scale(1)';
+      }
+    }, { passive: true });
+  </script>
+</body>
+</html>
