@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Gallery — 310 Duncaster</title>
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="310 Duncaster" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
@@ -22,9 +23,42 @@
       </div>
     </nav>
     <div class="nav-page-title" id="room-title">—</div>
-
     <div class="gallery-grid" id="gallery-grid"></div>
   </div>
+
+  <!-- Upload button -->
+  <button class="upload-fab" id="upload-fab" aria-label="Add photo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <!-- Token setup modal -->
+  <div class="modal-overlay" id="token-modal">
+    <div class="modal-box">
+      <div class="modal-title">One-time Setup</div>
+      <p class="modal-desc">To upload photos directly from your iPhone, enter your GitHub Personal Access Token. It will be saved on this device only.</p>
+      <p class="modal-desc" style="margin-top:8px">Create one at <strong>github.com → Settings → Developer settings → Personal access tokens → Fine-grained</strong>. Give it <strong>Contents: Read and write</strong> access to the 310-duncaster repo.</p>
+      <input class="modal-input" id="token-input" type="password" placeholder="github_pat_..." autocomplete="off" />
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="token-cancel">Cancel</button>
+        <button class="modal-btn modal-btn-confirm" id="token-save">Save & Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload progress modal -->
+  <div class="modal-overlay" id="upload-modal">
+    <div class="modal-box">
+      <div class="modal-title" id="upload-status">Uploading…</div>
+      <div class="upload-bar"><div class="upload-fill" id="upload-fill"></div></div>
+      <p class="modal-desc" id="upload-detail">Preparing photo…</p>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Hidden file input -->
+  <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" multiple />
 
   <!-- Lightbox -->
   <div class="lightbox" id="lightbox" role="dialog" aria-label="Photo viewer">
@@ -42,6 +76,9 @@
 
   <script src="js/config.js"></script>
   <script>
+    const REPO_OWNER = 'davidalittle1986';
+    const REPO_NAME  = '310-duncaster';
+
     const [floorKey = 'downstairs', roomId = ''] = location.hash.slice(1).split('/');
     const floor = SITE.floors[floorKey];
     const room  = floor?.rooms.find(r => r.id === roomId);
@@ -58,7 +95,7 @@
       loadPhotos(floorKey, roomId);
     }
 
-    // Back-swipe: track touch start X
+    // Back-swipe
     let touchStartX = 0;
     document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
     document.addEventListener('touchend', e => {
@@ -70,41 +107,35 @@
     let photos = [];
     let current = 0;
 
-    async function loadPhotos(floorKey, roomId) {
+    async function loadPhotos(fk, rid) {
       const grid = document.getElementById('gallery-grid');
+      grid.innerHTML = '';
       try {
-        const res = await fetch('photos/manifest.json');
-        if (!res.ok) throw new Error('no manifest');
+        const res = await fetch('photos/manifest.json?t=' + Date.now());
+        if (!res.ok) throw new Error();
         const manifest = await res.json();
-        const key = `${floorKey}/${roomId}`;
-        const entries = manifest[key] || [];
-        // Support both old string format and new {file, date} format
+        const entries = manifest[`${fk}/${rid}`] || [];
         photos = entries.map(e => typeof e === 'string'
-          ? { src: `photos/${floorKey}/${roomId}/${e}`, date: null }
-          : { src: `photos/${floorKey}/${roomId}/${e.file}`, date: e.date || null }
+          ? { src: `photos/${fk}/${rid}/${e}`, date: null }
+          : { src: `photos/${fk}/${rid}/${e.file}`, date: e.date || null }
         );
       } catch { photos = []; }
 
       if (photos.length === 0) {
-        grid.innerHTML = `
-          <div class="gallery-empty">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="6" y="10" width="36" height="28" rx="2"/>
-              <circle cx="18" cy="20" r="3"/>
-              <path d="M6 30l10-8 8 6 6-4 12 10"/>
-            </svg>
-            <p>No photos yet</p>
-          </div>`;
+        grid.innerHTML = `<div class="gallery-empty">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1">
+            <rect x="6" y="10" width="36" height="28" rx="2"/>
+            <circle cx="18" cy="20" r="3"/>
+            <path d="M6 30l10-8 8 6 6-4 12 10"/>
+          </svg>
+          <p>No photos yet</p></div>`;
         return;
       }
-
       photos.forEach(({ src }, i) => {
         const item = document.createElement('div');
         item.className = 'gallery-item';
         const img = document.createElement('img');
-        img.src = src;
-        img.alt = `Photo ${i + 1}`;
-        img.loading = 'lazy';
+        img.src = src; img.alt = `Photo ${i+1}`; img.loading = 'lazy';
         item.appendChild(img);
         item.addEventListener('click', () => openLightbox(i));
         grid.appendChild(item);
@@ -117,24 +148,9 @@
     const lbCount  = document.getElementById('lb-counter');
     const lbDate   = document.getElementById('lb-date');
 
-    function openLightbox(i) {
-      current = i;
-      showPhoto();
-      lightbox.classList.add('active');
-      document.documentElement.requestFullscreen?.().catch(() => {});
-    }
-
-    function showPhoto() {
-      lbImg.src = photos[current].src;
-      lbCount.textContent = `${current + 1} / ${photos.length}`;
-      lbDate.textContent  = photos[current].date || '';
-    }
-
-    function closeLightbox() {
-      lightbox.classList.remove('active');
-      if (document.fullscreenElement) document.exitFullscreen?.();
-    }
-
+    function openLightbox(i) { current = i; showPhoto(); lightbox.classList.add('active'); document.documentElement.requestFullscreen?.().catch(()=>{}); }
+    function showPhoto() { lbImg.src = photos[current].src; lbCount.textContent = `${current+1} / ${photos.length}`; lbDate.textContent = photos[current].date || ''; }
+    function closeLightbox() { lightbox.classList.remove('active'); if (document.fullscreenElement) document.exitFullscreen?.(); }
     function prev() { current = (current - 1 + photos.length) % photos.length; showPhoto(); }
     function next() { current = (current + 1) % photos.length; showPhoto(); }
 
@@ -142,60 +158,152 @@
     document.getElementById('lb-prev').onclick  = prev;
     document.getElementById('lb-next').onclick  = next;
     lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
-
-    // Keyboard
     document.addEventListener('keydown', e => {
       if (!lightbox.classList.contains('active')) return;
-      if (e.key === 'ArrowLeft')  prev();
-      if (e.key === 'ArrowRight') next();
-      if (e.key === 'Escape')     closeLightbox();
+      if (e.key === 'ArrowLeft') prev(); if (e.key === 'ArrowRight') next(); if (e.key === 'Escape') closeLightbox();
     });
 
     // Swipe in lightbox
     let lbTouchX = 0, lbTouchY = 0;
-    lightbox.addEventListener('touchstart', e => {
-      lbTouchX = e.touches[0].clientX;
-      lbTouchY = e.touches[0].clientY;
-    }, { passive: true });
-
+    lightbox.addEventListener('touchstart', e => { lbTouchX = e.touches[0].clientX; lbTouchY = e.touches[0].clientY; }, { passive: true });
     lightbox.addEventListener('touchend', e => {
       const dx = e.changedTouches[0].clientX - lbTouchX;
       const dy = e.changedTouches[0].clientY - lbTouchY;
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-        dx < 0 ? next() : prev();
-      }
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) dx < 0 ? next() : prev();
     }, { passive: true });
 
     // Pinch-to-zoom in lightbox
     let lbScale = 1, lbLastDist = 0;
-    lightbox.addEventListener('touchstart', e => {
-      if (e.touches.length === 2) {
-        lbLastDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-      }
-    }, { passive: true });
-
+    lightbox.addEventListener('touchstart', e => { if (e.touches.length === 2) lbLastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }, { passive: true });
     lightbox.addEventListener('touchmove', e => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        const dist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        lbScale = Math.min(4, Math.max(1, lbScale * (dist / lbLastDist)));
-        lbImg.style.transform = `scale(${lbScale})`;
-        lbLastDist = dist;
-      }
+      if (e.touches.length === 2) { e.preventDefault(); const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); lbScale = Math.min(4, Math.max(1, lbScale * (dist / lbLastDist))); lbImg.style.transform = `scale(${lbScale})`; lbLastDist = dist; }
     }, { passive: false });
+    lightbox.addEventListener('touchend', e => { if (e.touches.length < 2 && lbScale <= 1.05) { lbScale = 1; lbImg.style.transform = 'scale(1)'; } }, { passive: true });
 
-    lightbox.addEventListener('touchend', e => {
-      if (e.touches.length < 2 && lbScale <= 1.05) {
-        lbScale = 1;
-        lbImg.style.transform = 'scale(1)';
+    // ── Upload ──────────────────────────────────────────────────
+    const uploadFab    = document.getElementById('upload-fab');
+    const tokenModal   = document.getElementById('token-modal');
+    const uploadModal  = document.getElementById('upload-modal');
+    const photoInput   = document.getElementById('photo-input');
+    const toast        = document.getElementById('toast');
+
+    uploadFab.addEventListener('click', () => {
+      if (!localStorage.getItem('gh_token')) {
+        tokenModal.classList.add('active');
+        document.getElementById('token-input').value = '';
+      } else {
+        photoInput.click();
       }
-    }, { passive: true });
+    });
+
+    document.getElementById('token-cancel').onclick = () => tokenModal.classList.remove('active');
+    document.getElementById('token-save').onclick = () => {
+      const t = document.getElementById('token-input').value.trim();
+      if (!t) return;
+      localStorage.setItem('gh_token', t);
+      tokenModal.classList.remove('active');
+      photoInput.click();
+    };
+
+    photoInput.addEventListener('change', async () => {
+      const files = Array.from(photoInput.files);
+      if (!files.length) return;
+      photoInput.value = '';
+      const token = localStorage.getItem('gh_token');
+
+      uploadModal.classList.add('active');
+      let succeeded = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadStatus(`Uploading ${i+1} of ${files.length}…`, `Processing ${file.name}`, ((i / files.length) * 60) + 5);
+        try {
+          const { base64, filename } = await resizeAndEncode(file);
+          setUploadStatus(`Uploading ${i+1} of ${files.length}…`, 'Uploading photo…', ((i / files.length) * 60) + 30);
+          const path = `photos/${floorKey}/${roomId}/${filename}`;
+          await githubPut(token, path, base64, `Add photo to ${room.label}`);
+          setUploadStatus(`Uploading ${i+1} of ${files.length}…`, 'Updating manifest…', ((i / files.length) * 60) + 55);
+          await updateManifest(token, floorKey, roomId, filename);
+          succeeded++;
+        } catch (err) {
+          console.error(err);
+          if (err.message.includes('401') || err.message.includes('403')) {
+            localStorage.removeItem('gh_token');
+            uploadModal.classList.remove('active');
+            showToast('Token invalid or expired. Tap + to re-enter.');
+            return;
+          }
+        }
+      }
+
+      setUploadStatus('Done!', `${succeeded} photo${succeeded !== 1 ? 's' : ''} added`, 100);
+      setTimeout(async () => {
+        uploadModal.classList.remove('active');
+        if (succeeded > 0) {
+          showToast(`${succeeded} photo${succeeded !== 1 ? 's' : ''} uploaded!`);
+          await loadPhotos(floorKey, roomId);
+        }
+      }, 800);
+    });
+
+    function setUploadStatus(title, detail, pct) {
+      document.getElementById('upload-status').textContent = title;
+      document.getElementById('upload-detail').textContent = detail;
+      document.getElementById('upload-fill').style.width = pct + '%';
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('active');
+      setTimeout(() => toast.classList.remove('active'), 3000);
+    }
+
+    async function resizeAndEncode(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          const maxPx = 1920;
+          const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width  = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const base64  = dataUrl.split(',')[1];
+          const ts = Date.now();
+          const filename = `IMG_${ts}.jpg`;
+          resolve({ base64, filename });
+        };
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    async function githubPut(token, path, content, message, sha = null) {
+      const body = { message, content };
+      if (sha) body.sha = sha;
+      const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      return res.json();
+    }
+
+    async function updateManifest(token, fk, rid, filename) {
+      const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/photos/manifest.json`;
+      const res = await fetch(url, { headers: { 'Authorization': `token ${token}` } });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const manifest = JSON.parse(atob(data.content.replace(/\s/g, '')));
+      const key = `${fk}/${rid}`;
+      if (!manifest[key]) manifest[key] = [];
+      const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      manifest[key].push({ file: filename, date });
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(manifest, null, 2))));
+      await githubPut(token, 'photos/manifest.json', content, 'Update manifest', data.sha);
+    }
   </script>
 </body>
 </html>
