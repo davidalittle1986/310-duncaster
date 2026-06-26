@@ -54,6 +54,18 @@
     </div>
   </div>
 
+  <!-- Delete confirm modal -->
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal-box">
+      <div class="modal-title">Delete this photo?</div>
+      <p class="modal-desc">This permanently removes the photo from the site. This can't be undone.</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="delete-cancel">Cancel</button>
+        <button class="modal-btn modal-btn-danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
@@ -63,6 +75,9 @@
   <!-- Lightbox -->
   <div class="lightbox" id="lightbox" role="dialog" aria-label="Photo viewer">
     <button class="lightbox-close" id="lb-close" aria-label="Close">✕</button>
+    <button class="lightbox-delete" id="lb-delete" aria-label="Delete photo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6"/><path d="M10 11v6M14 11v6"/></svg>
+    </button>
     <button class="lightbox-prev" id="lb-prev" aria-label="Previous">
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 4l-6 6 6 6"/></svg>
     </button>
@@ -158,18 +173,123 @@
     document.getElementById('lb-prev').onclick  = prev;
     document.getElementById('lb-next').onclick  = next;
     lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
+
+    // ── Delete photo ────────────────────────────────────────────
+    const deleteModal = document.getElementById('delete-modal');
+    document.getElementById('lb-delete').onclick = () => {
+      if (!localStorage.getItem('gh_token')) {
+        showToast('Tap + first to enter your access token.');
+        return;
+      }
+      deleteModal.classList.add('active');
+    };
+    document.getElementById('delete-cancel').onclick = () => deleteModal.classList.remove('active');
+    document.getElementById('delete-confirm').onclick = async () => {
+      deleteModal.classList.remove('active');
+      const token = localStorage.getItem('gh_token');
+      const photo = photos[current];
+      const path  = photo.src.split('?')[0]; // photos/<floor>/<room>/<file>
+      const filename = path.split('/').pop();
+      uploadModal.classList.add('active');
+      setUploadStatus('Deleting…', 'Removing photo…', 40);
+      try {
+        // get sha then delete file
+        const metaRes = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!metaRes.ok) throw new Error(String(metaRes.status));
+        const meta = await metaRes.json();
+        await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: `Delete photo from ${room.label}`, sha: meta.sha })
+        });
+        setUploadStatus('Deleting…', 'Updating manifest…', 75);
+        await removeFromManifest(token, floorKey, roomId, filename);
+        setUploadStatus('Done!', 'Photo removed', 100);
+        setTimeout(async () => {
+          uploadModal.classList.remove('active');
+          closeLightbox();
+          showToast('Photo deleted');
+          await loadPhotos(floorKey, roomId);
+        }, 700);
+      } catch (err) {
+        console.error(err);
+        uploadModal.classList.remove('active');
+        if (String(err.message).match(/401|403/)) {
+          localStorage.removeItem('gh_token');
+          showToast('Token invalid or expired. Tap + to re-enter.');
+        } else {
+          showToast('Delete failed. Try again.');
+        }
+      }
+    };
+
+    async function removeFromManifest(token, fk, rid, filename) {
+      const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/photos/manifest.json`;
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const manifest = JSON.parse(atob(data.content.replace(/\s/g, '')));
+      const key = `${fk}/${rid}`;
+      if (manifest[key]) {
+        manifest[key] = manifest[key].filter(e => (typeof e === 'string' ? e : e.file) !== filename);
+        if (manifest[key].length === 0) delete manifest[key];
+      }
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(manifest, null, 2))));
+      await githubPut(token, 'photos/manifest.json', content, 'Update manifest', data.sha);
+    }
     document.addEventListener('keydown', e => {
       if (!lightbox.classList.contains('active')) return;
       if (e.key === 'ArrowLeft') prev(); if (e.key === 'ArrowRight') next(); if (e.key === 'Escape') closeLightbox();
     });
 
-    // Swipe in lightbox
-    let lbTouchX = 0, lbTouchY = 0;
-    lightbox.addEventListener('touchstart', e => { lbTouchX = e.touches[0].clientX; lbTouchY = e.touches[0].clientY; }, { passive: true });
+    // Swipe in lightbox: horizontal = prev/next, vertical down = close
+    let lbTouchX = 0, lbTouchY = 0, dragging = false, lockedAxis = null;
+    lightbox.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1 || lbScale > 1.05) return;
+      lbTouchX = e.touches[0].clientX;
+      lbTouchY = e.touches[0].clientY;
+      dragging = true;
+      lockedAxis = null;
+      lbImg.style.transition = '';
+    }, { passive: true });
+
+    lightbox.addEventListener('touchmove', e => {
+      if (!dragging || e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - lbTouchX;
+      const dy = e.touches[0].clientY - lbTouchY;
+      if (!lockedAxis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+        lockedAxis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+      }
+      if (lockedAxis === 'y' && dy > 0) {
+        const scale = Math.max(0.7, 1 - dy / 1000);
+        lbImg.style.transform = `translateY(${dy}px) scale(${scale})`;
+        lightbox.style.background = `rgba(0,0,0,${Math.max(0.3, 0.96 - dy / 600)})`;
+      }
+    }, { passive: true });
+
     lightbox.addEventListener('touchend', e => {
+      if (!dragging) return;
+      dragging = false;
       const dx = e.changedTouches[0].clientX - lbTouchX;
       const dy = e.changedTouches[0].clientY - lbTouchY;
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) dx < 0 ? next() : prev();
+      if (lockedAxis === 'x' && Math.abs(dx) > 40) {
+        dx < 0 ? next() : prev();
+      } else if (lockedAxis === 'y' && dy > 110) {
+        lbImg.style.transition = 'transform 0.25s ease, opacity 0.25s ease';
+        lbImg.style.transform = `translateY(${window.innerHeight}px) scale(0.6)`;
+        lbImg.style.opacity = '0';
+        setTimeout(() => {
+          closeLightbox();
+          lbImg.style.transition = '';
+          lbImg.style.transform = '';
+          lbImg.style.opacity = '';
+          lightbox.style.background = '';
+        }, 220);
+      } else {
+        lbImg.style.transition = 'transform 0.25s ease';
+        lbImg.style.transform = '';
+        lightbox.style.background = '';
+      }
     }, { passive: true });
 
     // Pinch-to-zoom in lightbox
@@ -284,7 +404,7 @@
       if (sha) body.sha = sha;
       const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
         method: 'PUT',
-        headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -293,7 +413,7 @@
 
     async function updateManifest(token, fk, rid, filename) {
       const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/photos/manifest.json`;
-      const res = await fetch(url, { headers: { 'Authorization': `token ${token}` } });
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       const manifest = JSON.parse(atob(data.content.replace(/\s/g, '')));
