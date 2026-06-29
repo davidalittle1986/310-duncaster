@@ -570,6 +570,8 @@ a { color: inherit; text-decoration: none; }
 /* In measure mode: hide hotspots, enable the measure layer */
 body.measuring .hotspot-svg { opacity: 0; pointer-events: none; }
 body.measuring .measure-svg { pointer-events: auto; touch-action: none; }
+body.measuring .floorplan-wrapper,
+body.measuring .floorplan-zoom-container { touch-action: none; }
 
 .measure-svg { filter: drop-shadow(0 0 2px rgba(0,0,0,0.95)); }
 .m-line {

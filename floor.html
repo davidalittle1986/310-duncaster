@@ -319,8 +319,9 @@
     const wrapperEl = document.getElementById('fp-wrapper');
     wrapperEl.addEventListener('touchstart', e => {
       if (!measureMode || e.touches.length !== 1) { if (drawing) cancelDraw(); return; }
+      e.preventDefault();   // stop iOS from hijacking the one-finger gesture as scroll/zoom
       beginDraw(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: true });
+    }, { passive: false });
     wrapperEl.addEventListener('touchmove', e => {
       if (!measureMode || !drawing) return;
       if (e.touches.length !== 1) { cancelDraw(); return; }
