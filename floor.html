@@ -45,35 +45,7 @@
     <div class="measure-bar" id="measure-bar">
       <div class="measure-readout" id="measure-readout">Pinch to zoom · drag to measure</div>
       <div class="measure-actions">
-        <button class="measure-btn" id="calibrate-btn">Calibrate</button>
         <button class="measure-btn" id="clear-btn">Clear</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Calibration modal -->
-  <div class="modal-overlay" id="calib-modal">
-    <div class="modal-box">
-      <div class="modal-title">Set the scale</div>
-      <p class="modal-desc">You traced a line over a known dimension on the plan. Enter its real length so distances can be calculated.</p>
-      <input class="modal-input" id="calib-input" type="text" inputmode="decimal" placeholder="e.g. 20' 6&quot;  or  20.5" autocomplete="off" />
-      <p class="modal-desc" style="font-size:0.72rem">Accepted: <strong>20</strong> (feet) · <strong>20.5</strong> · <strong>20' 6"</strong> · <strong>6"</strong></p>
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-cancel" id="calib-cancel">Cancel</button>
-        <button class="modal-btn modal-btn-confirm" id="calib-save">Save Scale</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Token setup modal (for permanent save) -->
-  <div class="modal-overlay" id="token-modal">
-    <div class="modal-box">
-      <div class="modal-title">Save scale to the site</div>
-      <p class="modal-desc">To save the scale permanently (so it works on every device and never resets), enter your GitHub access token. Saved on this device only.</p>
-      <input class="modal-input" id="token-input" type="password" placeholder="github_pat_..." autocomplete="off" />
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-cancel" id="token-skip">Just this device</button>
-        <button class="modal-btn modal-btn-confirm" id="token-save">Save Everywhere</button>
       </div>
     </div>
   </div>
@@ -91,14 +63,14 @@
     document.getElementById('floor-title').textContent       = floor.label;
     document.getElementById('floor-title-large').textContent = floor.label;
 
-    const img = document.getElementById('floorplan-img');
-    img.src   = floor.floorplan;
+    const img        = document.getElementById('floorplan-img');
+    const measureSvg = document.getElementById('measure-svg');
+    img.src = floor.floorplan;
 
     // Loading screen
     const loader     = document.getElementById('loader');
     const loaderFill = document.getElementById('loader-fill');
     const page       = document.getElementById('floor-page');
-    const measureSvg = document.getElementById('measure-svg');
 
     loaderFill.style.width = '30%';
     img.onload = () => {
@@ -115,7 +87,7 @@
     };
     if (img.complete && img.naturalWidth) img.onload();
 
-    // Build SVG hotspots
+    // ── Hotspots ────────────────────────────────────────────────
     function buildHotspots() {
       const svg = document.getElementById('hotspot-svg');
       floor.rooms.forEach(room => {
@@ -128,20 +100,14 @@
 
         const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         circle.setAttribute('class', 'hotspot-circle');
-        circle.setAttribute('cx', room.x);
-        circle.setAttribute('cy', room.y);
-        circle.setAttribute('r', '38');
+        circle.setAttribute('cx', room.x); circle.setAttribute('cy', room.y); circle.setAttribute('r', '38');
 
         const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         text.setAttribute('class', 'hotspot-label');
-        text.setAttribute('x', room.x);
-        text.setAttribute('y', room.y);
+        text.setAttribute('x', room.x); text.setAttribute('y', room.y);
         text.textContent = room.label;
 
-        g.appendChild(circle);
-        g.appendChild(text);
-        svg.appendChild(g);
-
+        g.appendChild(circle); g.appendChild(text); svg.appendChild(g);
         g.addEventListener('click', () => { if (!measureMode) navigateToRoom(room, floorKey); });
         g.addEventListener('keydown', e => {
           if ((e.key === 'Enter' || e.key === ' ') && !measureMode) navigateToRoom(room, floorKey);
@@ -150,37 +116,24 @@
     }
 
     function navigateToRoom(room, floor) {
-      const container = document.getElementById('zoom-container');
       const s = 3.5;
       const cx = (room.x / 1000) * img.offsetWidth;
       const cy = (room.y / 1000) * img.offsetHeight;
-      const ntx = cx - cx * s, nty = cy - cy * s;
-      container.classList.add('animating', 'zooming');
-      container.style.transform = `translate(${ntx}px, ${nty}px) scale(${s})`;
+      zc.classList.add('animating', 'zooming');
+      zc.style.transform = `translate(${cx - cx * s}px, ${cy - cy * s}px) scale(${s})`;
       setTimeout(() => { location.href = `gallery.html#${floor}/${room.id}`; }, 550);
     }
 
     // ── Measure mode ────────────────────────────────────────────
-    const REPO_OWNER = 'davidalittle1986';
-    const REPO_NAME  = '310-duncaster';
-    const SCALE_KEY = `measure_scale_${floorKey}`; // feet per natural pixel
+    const SCALE_KEY = `measure_scale_${floorKey}`;
     let measureMode = false;
-    let calibrating = false;
-    let bakedScales = {};            // loaded from scales.json (permanent, repo-stored)
+    let bakedScales = {};
     const NS = 'http://www.w3.org/2000/svg';
 
-    // Load permanently-saved scales from the repo
     fetch('scales.json?t=' + Date.now())
       .then(r => r.ok ? r.json() : {})
       .then(j => { bakedScales = j || {}; })
       .catch(() => {});
-
-    const measureToggle = document.getElementById('measure-toggle');
-    const measureBar    = document.getElementById('measure-bar');
-    const readout       = document.getElementById('measure-readout');
-    const hint          = document.getElementById('hotspot-hint');
-    const hotspotSvg    = document.getElementById('hotspot-svg');
-    const toast         = document.getElementById('toast');
 
     function getScale() {
       const v = parseFloat(localStorage.getItem(SCALE_KEY));
@@ -188,6 +141,11 @@
       const b = parseFloat(bakedScales[floorKey]);
       return isNaN(b) ? null : b;
     }
+
+    const measureToggle = document.getElementById('measure-toggle');
+    const readout = document.getElementById('measure-readout');
+    const hint    = document.getElementById('hotspot-hint');
+    const toast   = document.getElementById('toast');
 
     measureToggle.addEventListener('click', () => {
       measureMode = !measureMode;
@@ -197,47 +155,25 @@
       hint.textContent = measureMode
         ? 'Pinch to zoom · drag one finger to measure'
         : 'Tap a room to view construction photos';
-      if (measureMode) updateReadout();
-    });
-
-    function updateReadout(msg) {
-      if (msg) { readout.textContent = msg; return; }
-      readout.textContent = getScale()
-        ? 'Pinch to zoom · drag to measure'
-        : 'Tap Calibrate, then trace a known dimension';
-    }
-
-    function showToast(m) { toast.textContent = m; toast.classList.add('active'); setTimeout(() => toast.classList.remove('active'), 2600); }
-
-    document.getElementById('calibrate-btn').addEventListener('click', () => {
-      calibrating = true;
-      updateReadout('Trace a printed dimension on the plan…');
-      showToast('Now drag a line over a known dimension');
-    });
-
-    document.getElementById('clear-btn').addEventListener('click', () => {
-      [...measureSvg.querySelectorAll('.m-line,.m-end,.m-label,.m-labelbg')].forEach(n => n.remove());
       updateReadout();
     });
 
-    // Map a screen point to SVG (natural-pixel) coordinates
+    function updateReadout(msg) {
+      readout.textContent = msg || (getScale()
+        ? 'Pinch to zoom · drag to measure'
+        : 'Scale not set yet');
+    }
+    function showToast(m) { toast.textContent = m; toast.classList.add('active'); setTimeout(() => toast.classList.remove('active'), 2400); }
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      [...measureSvg.querySelectorAll('.m-line,.m-end,.m-label')].forEach(n => n.remove());
+      updateReadout();
+    });
+
     function toSvg(clientX, clientY) {
       const pt = measureSvg.createSVGPoint();
       pt.x = clientX; pt.y = clientY;
       return pt.matrixTransform(measureSvg.getScreenCTM().inverse());
-    }
-
-    // Length parsing / formatting
-    function parseLength(str) {
-      str = str.trim();
-      if (!str) return null;
-      let feet = 0, matched = false;
-      const ftMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:'|ft\b|feet\b)/i);
-      const inMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:"|in\b|inch\b|inches\b)/i);
-      if (ftMatch) { feet += parseFloat(ftMatch[1]); matched = true; }
-      if (inMatch) { feet += parseFloat(inMatch[1]) / 12; matched = true; }
-      if (!matched) { const n = parseFloat(str); if (!isNaN(n)) return n; return null; }
-      return feet;
     }
 
     function formatFeet(totalFeet) {
@@ -247,7 +183,7 @@
       return `${feet}' ${inches}"`;
     }
 
-    // Drawing state
+    // Drawing
     let drawing = false, startPt = null, curLine = null, curEnds = [], lastDistPx = 0;
     const strokeW = () => Math.max(2, (img.naturalWidth || 2000) / 320);
     const endR    = () => Math.max(4, (img.naturalWidth || 2000) / 170);
@@ -255,7 +191,7 @@
 
     function beginDraw(clientX, clientY) {
       startPt = toSvg(clientX, clientY);
-      drawing = true;
+      drawing = true; lastDistPx = 0;
       curLine = document.createElementNS(NS, 'line');
       curLine.setAttribute('class', 'm-line');
       curLine.setAttribute('x1', startPt.x); curLine.setAttribute('y1', startPt.y);
@@ -265,13 +201,11 @@
       curEnds = [];
       [0,1].forEach(() => {
         const c = document.createElementNS(NS, 'circle');
-        c.setAttribute('class', 'm-end');
-        c.setAttribute('r', endR());
+        c.setAttribute('class', 'm-end'); c.setAttribute('r', endR());
         c.setAttribute('cx', startPt.x); c.setAttribute('cy', startPt.y);
         measureSvg.appendChild(c); curEnds.push(c);
       });
     }
-
     function moveDraw(clientX, clientY) {
       if (!drawing) return;
       const p = toSvg(clientX, clientY);
@@ -279,290 +213,138 @@
       curEnds[1].setAttribute('cx', p.x); curEnds[1].setAttribute('cy', p.y);
       lastDistPx = Math.hypot(p.x - startPt.x, p.y - startPt.y);
       const scale = getScale();
-      if (scale && !calibrating) updateReadout(formatFeet(lastDistPx * scale));
+      if (scale) updateReadout(formatFeet(lastDistPx * scale));
     }
-
     function endDraw() {
       if (!drawing) return;
       drawing = false;
-      if (lastDistPx < 4) { // tap, not a drag — discard
-        curLine.remove(); curEnds.forEach(c => c.remove());
-        return;
-      }
-      if (calibrating) {
-        // keep the line briefly; ask for its real length
-        pendingCalibLine = { line: curLine, ends: curEnds, px: lastDistPx };
-        openCalibModal();
-      } else {
-        const scale = getScale();
-        if (scale) {
-          addLabel(curLine, formatFeet(lastDistPx * scale));
-        } else {
-          // keep the line visible even without a scale
-          showToast('Tap Calibrate first to set the scale');
-        }
-      }
+      if (lastDistPx < 4) { curLine.remove(); curEnds.forEach(c => c.remove()); return; }
+      const scale = getScale();
+      if (scale) addLabel(curLine, formatFeet(lastDistPx * scale));
+      else showToast('Scale not set for this floor');
     }
-
-    function addLabel(line, text) {
-      const mx = (parseFloat(line.getAttribute('x1')) + parseFloat(line.getAttribute('x2'))) / 2;
-      const my = (parseFloat(line.getAttribute('y1')) + parseFloat(line.getAttribute('y2'))) / 2;
-      const t = document.createElementNS(NS, 'text');
-      t.setAttribute('class', 'm-label');
-      t.setAttribute('x', mx); t.setAttribute('y', my);
-      t.setAttribute('font-size', fontPx());
-      t.textContent = text;
-      measureSvg.appendChild(t);
-    }
-
-    // Touch handlers for drawing (single finger only)
-    const wrapperEl = document.getElementById('fp-wrapper');
-    wrapperEl.addEventListener('touchstart', e => {
-      if (!measureMode || e.touches.length !== 1) { if (drawing) cancelDraw(); return; }
-      e.preventDefault();   // stop iOS from hijacking the one-finger gesture as scroll/zoom
-      beginDraw(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: false });
-    wrapperEl.addEventListener('touchmove', e => {
-      if (!measureMode || !drawing) return;
-      if (e.touches.length !== 1) { cancelDraw(); return; }
-      e.preventDefault();
-      moveDraw(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: false });
-    wrapperEl.addEventListener('touchend', e => {
-      if (measureMode && drawing) endDraw();
-    }, { passive: true });
-
     function cancelDraw() {
       if (!drawing) return;
       drawing = false;
       curLine.remove(); curEnds.forEach(c => c.remove());
     }
-
-    // Mouse handlers (desktop testing)
-    wrapperEl.addEventListener('mousedown', e => { if (measureMode) beginDraw(e.clientX, e.clientY); });
-    wrapperEl.addEventListener('mousemove', e => { if (measureMode && drawing) moveDraw(e.clientX, e.clientY); });
-    window.addEventListener('mouseup', () => { if (measureMode && drawing) endDraw(); });
-
-    // Calibration modal
-    let pendingCalibLine = null;
-    const calibModal = document.getElementById('calib-modal');
-    const calibInput = document.getElementById('calib-input');
-    function openCalibModal() { calibInput.value = ''; calibModal.classList.add('active'); setTimeout(() => calibInput.focus(), 100); }
-    function closeCalibModal() { calibModal.classList.remove('active'); }
-
-    document.getElementById('calib-cancel').addEventListener('click', () => {
-      if (pendingCalibLine) { pendingCalibLine.line.remove(); pendingCalibLine.ends.forEach(c => c.remove()); pendingCalibLine = null; }
-      calibrating = false;
-      closeCalibModal();
-      updateReadout();
-    });
-
-    document.getElementById('calib-save').addEventListener('click', () => {
-      const feet = parseLength(calibInput.value);
-      if (!feet || feet <= 0 || !pendingCalibLine) { showToast('Enter a valid length'); return; }
-      const feetPerPx = feet / pendingCalibLine.px;
-      localStorage.setItem(SCALE_KEY, String(feetPerPx));
-      // remove the calibration reference line
-      pendingCalibLine.line.remove(); pendingCalibLine.ends.forEach(c => c.remove());
-      pendingCalibLine = null;
-      calibrating = false;
-      closeCalibModal();
-      updateReadout();
-      // Offer to persist permanently to the repo
-      pendingScale = feetPerPx;
-      if (localStorage.getItem('gh_token')) {
-        savePermanent(feetPerPx);
-      } else {
-        showToast('Scale set on this device.');
-        document.getElementById('token-modal').classList.add('active');
-      }
-    });
-
-    // ── Permanent (repo) scale save ─────────────────────────────
-    let pendingScale = null;
-    const tokenModal = document.getElementById('token-modal');
-    document.getElementById('token-skip').addEventListener('click', () => { tokenModal.classList.remove('active'); });
-    document.getElementById('token-save').addEventListener('click', () => {
-      const t = document.getElementById('token-input').value.trim();
-      if (!t) return;
-      localStorage.setItem('gh_token', t);
-      tokenModal.classList.remove('active');
-      if (pendingScale != null) savePermanent(pendingScale);
-    });
-
-    async function githubPut(token, path, contentB64, message, sha) {
-      const body = { message, content: contentB64 };
-      if (sha) body.sha = sha;
-      const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      return res.json();
+    function addLabel(line, text) {
+      const mx = (parseFloat(line.getAttribute('x1')) + parseFloat(line.getAttribute('x2'))) / 2;
+      const my = (parseFloat(line.getAttribute('y1')) + parseFloat(line.getAttribute('y2'))) / 2;
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('class', 'm-label'); t.setAttribute('x', mx); t.setAttribute('y', my);
+      t.setAttribute('font-size', fontPx()); t.textContent = text;
+      measureSvg.appendChild(t);
     }
 
-    async function savePermanent(feetPerPx) {
-      const token = localStorage.getItem('gh_token');
-      if (!token) return;
-      showToast('Saving scale to the site…');
-      try {
-        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/scales.json`;
-        let sha = null, data = {};
-        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-        if (res.ok) {
-          const j = await res.json();
-          sha = j.sha;
-          try { data = JSON.parse(atob(j.content.replace(/\s/g, ''))); } catch { data = {}; }
-        }
-        data[floorKey] = feetPerPx;
-        const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
-        await githubPut(token, 'scales.json', content, `Set ${floorKey} measurement scale`, sha);
-        bakedScales = data;
-        showToast('Saved! Works on every device now.');
-      } catch (err) {
-        if (String(err.message).match(/401|403/)) {
-          localStorage.removeItem('gh_token');
-          showToast('Token invalid — saved on this device only.');
-        } else {
-          showToast('Couldn’t save to site — kept on this device.');
-        }
-      }
-    }
-
-    // ── iOS-style pinch / pan ───────────────────────────────────
+    // ── Unified gesture controller ──────────────────────────────
     const wrapper = document.getElementById('fp-wrapper');
     const zc      = document.getElementById('zoom-container');
-    let scale = 1, tx = 0, ty = 0;          // current transform state
-    let lastDist = 0, lastMidX = 0, lastMidY = 0;
-    let lastPanX = 0, lastPanY = 0;
-    let pinching = false, panning = false;
+    let scale = 1, tx = 0, ty = 0;
+    let gesture = null;                 // 'pinch' | 'pan' | 'draw' | null
+    let lastDist = 0, lastMidX = 0, lastMidY = 0, lastPanX = 0, lastPanY = 0;
     const MAX_SCALE = 6;
 
-    function applyTransform() {
-      zc.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
-    }
-
+    function applyTransform() { zc.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; }
     function clampPan() {
-      // keep the image from being dragged entirely out of view
-      const baseW = img.offsetWidth, baseH = img.offsetHeight;
-      const maxX = Math.max(0, (baseW * scale - wrapper.clientWidth) / 2 + 60);
-      const maxY = Math.max(0, (baseH * scale - wrapper.clientHeight) / 2 + 60);
+      const maxX = Math.max(0, (img.offsetWidth  * scale - wrapper.clientWidth)  / 2 + 60);
+      const maxY = Math.max(0, (img.offsetHeight * scale - wrapper.clientHeight) / 2 + 60);
       tx = Math.min(maxX, Math.max(-maxX, tx));
       ty = Math.min(maxY, Math.max(-maxY, ty));
     }
+    function rel(touch) { const r = wrapper.getBoundingClientRect(); return { x: touch.clientX - r.left, y: touch.clientY - r.top }; }
+    function mid(a, b) { const r = wrapper.getBoundingClientRect(); return { x: (a.clientX + b.clientX) / 2 - r.left, y: (a.clientY + b.clientY) / 2 - r.top }; }
 
-    function midpoint(t0, t1) {
-      const r = wrapper.getBoundingClientRect();
-      return { x: (t0.clientX + t1.clientX) / 2 - r.left, y: (t0.clientY + t1.clientY) / 2 - r.top };
+    function startPinch(e) {
+      gesture = 'pinch';
+      if (drawing) cancelDraw();
+      zc.classList.remove('animating');
+      lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      const m = mid(e.touches[0], e.touches[1]); lastMidX = m.x; lastMidY = m.y;
+    }
+    function startOneFinger(e) {
+      if (measureMode) { gesture = 'draw'; beginDraw(e.touches[0].clientX, e.touches[0].clientY); }
+      else if (scale > 1.01) { gesture = 'pan'; const p = rel(e.touches[0]); lastPanX = p.x; lastPanY = p.y; zc.classList.remove('animating'); }
+      else gesture = null;
     }
 
     wrapper.addEventListener('touchstart', e => {
-      if (e.touches.length === 2) {
-        pinching = true; panning = false;
-        if (drawing) cancelDraw();
-        zc.classList.remove('animating');
-        lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const m = midpoint(e.touches[0], e.touches[1]);
-        lastMidX = m.x; lastMidY = m.y;
-      } else if (e.touches.length === 1 && !measureMode && scale > 1.01) {
-        panning = true;
-        const r = wrapper.getBoundingClientRect();
-        lastPanX = e.touches[0].clientX - r.left;
-        lastPanY = e.touches[0].clientY - r.top;
-        zc.classList.remove('animating');
+      if (e.touches.length === 2) { e.preventDefault(); startPinch(e); }
+      else if (e.touches.length === 1) {
+        if (measureMode || scale > 1.01) e.preventDefault();
+        startOneFinger(e);
       }
-    }, { passive: true });
+    }, { passive: false });
 
     wrapper.addEventListener('touchmove', e => {
-      if (pinching && e.touches.length === 2) {
+      if (gesture === 'pinch' && e.touches.length === 2) {
         e.preventDefault();
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const m = midpoint(e.touches[0], e.touches[1]);
+        const m = mid(e.touches[0], e.touches[1]);
         let desired = Math.min(MAX_SCALE, Math.max(1, scale * (dist / lastDist)));
         const factor = desired / scale;
-        // zoom toward the finger midpoint
         tx = m.x - (m.x - tx) * factor;
         ty = m.y - (m.y - ty) * factor;
         scale = desired;
-        // pan with the midpoint movement
-        tx += m.x - lastMidX;
-        ty += m.y - lastMidY;
+        tx += m.x - lastMidX; ty += m.y - lastMidY;
         lastDist = dist; lastMidX = m.x; lastMidY = m.y;
-        clampPan();
-        applyTransform();
-      } else if (panning && e.touches.length === 1) {
+        clampPan(); applyTransform();
+      } else if (gesture === 'draw' && e.touches.length === 1) {
         e.preventDefault();
-        const r = wrapper.getBoundingClientRect();
-        const px = e.touches[0].clientX - r.left;
-        const py = e.touches[0].clientY - r.top;
-        tx += px - lastPanX; ty += py - lastPanY;
-        lastPanX = px; lastPanY = py;
-        clampPan();
-        applyTransform();
+        moveDraw(e.touches[0].clientX, e.touches[0].clientY);
+      } else if (gesture === 'pan' && e.touches.length === 1) {
+        e.preventDefault();
+        const p = rel(e.touches[0]);
+        tx += p.x - lastPanX; ty += p.y - lastPanY; lastPanX = p.x; lastPanY = p.y;
+        clampPan(); applyTransform();
       }
     }, { passive: false });
 
     wrapper.addEventListener('touchend', e => {
       if (e.touches.length === 0) {
-        pinching = false; panning = false;
-        if (scale <= 1.02) {
-          scale = 1; tx = 0; ty = 0;
-          zc.classList.add('animating');
-          applyTransform();
-          setTimeout(() => zc.classList.remove('animating'), 300);
-        } else {
-          clampPan();
-          zc.classList.add('animating');
-          applyTransform();
+        if (gesture === 'draw') endDraw();
+        else if (gesture === 'pinch' || gesture === 'pan') {
+          if (scale <= 1.02) { scale = 1; tx = 0; ty = 0; }
+          else clampPan();
+          zc.classList.add('animating'); applyTransform();
           setTimeout(() => zc.classList.remove('animating'), 300);
         }
+        gesture = null;
       } else if (e.touches.length === 1) {
-        // dropped from two fingers to one — continue as pan if zoomed
-        pinching = false;
-        if (!measureMode && scale > 1.01) {
-          panning = true;
-          const r = wrapper.getBoundingClientRect();
-          lastPanX = e.touches[0].clientX - r.left;
-          lastPanY = e.touches[0].clientY - r.top;
-        }
+        // dropped from two fingers to one — continue with the remaining finger
+        if (gesture === 'pinch' || gesture === 'pan') startOneFinger(e);
       }
     }, { passive: true });
 
-    // Double-tap to zoom in/out (iOS Photos style)
+    // Double-tap to zoom in / reset (not in measure mode)
     let lastTap = 0;
     wrapper.addEventListener('touchend', e => {
-      if (measureMode || e.changedTouches.length !== 1) return;
+      if (measureMode || e.changedTouches.length !== 1 || gesture === 'draw') return;
       const now = Date.now();
-      if (now - lastTap < 300 && !pinching && !panning) {
-        const r = wrapper.getBoundingClientRect();
-        const fx = e.changedTouches[0].clientX - r.left;
-        const fy = e.changedTouches[0].clientY - r.top;
+      if (now - lastTap < 300) {
+        const p = rel(e.changedTouches[0]);
         zc.classList.add('animating');
         if (scale > 1.2) { scale = 1; tx = 0; ty = 0; }
-        else {
-          const target = 3;
-          const factor = target / scale;
-          tx = fx - (fx - tx) * factor;
-          ty = fy - (fy - ty) * factor;
-          scale = target; clampPan();
-        }
+        else { const target = 3, f = target / scale; tx = p.x - (p.x - tx) * f; ty = p.y - (p.y - ty) * f; scale = target; clampPan(); }
         applyTransform();
         setTimeout(() => zc.classList.remove('animating'), 300);
         lastTap = 0;
-      } else {
-        lastTap = now;
-      }
+      } else lastTap = now;
     }, { passive: true });
 
-    // Back-swipe gesture (only when not zoomed and not measuring)
-    let touchStartX = 0;
-    document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    // Back-swipe (only when not zoomed, not measuring)
+    let backStartX = 0;
+    document.addEventListener('touchstart', e => { backStartX = e.touches[0].clientX; }, { passive: true });
     document.addEventListener('touchend', e => {
       if (measureMode || scale > 1.02) return;
-      const dx = e.changedTouches[0].clientX - touchStartX;
-      if (dx > 80 && touchStartX < 40) history.back();
+      const dx = e.changedTouches[0].clientX - backStartX;
+      if (dx > 80 && backStartX < 40) history.back();
     }, { passive: true });
+
+    // Mouse support (desktop)
+    wrapper.addEventListener('mousedown', e => { if (measureMode) { gesture = 'draw'; beginDraw(e.clientX, e.clientY); } });
+    wrapper.addEventListener('mousemove', e => { if (gesture === 'draw' && drawing) moveDraw(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', () => { if (gesture === 'draw') { endDraw(); gesture = null; } });
   </script>
 </body>
 </html>
