@@ -232,8 +232,8 @@
       str = str.trim();
       if (!str) return null;
       let feet = 0, matched = false;
-      const ftMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:'|ft|feet|f)\b/i);
-      const inMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:"|in|inch|inches|")/i);
+      const ftMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:'|ft\b|feet\b)/i);
+      const inMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:"|in\b|inch\b|inches\b)/i);
       if (ftMatch) { feet += parseFloat(ftMatch[1]); matched = true; }
       if (inMatch) { feet += parseFloat(inMatch[1]) / 12; matched = true; }
       if (!matched) { const n = parseFloat(str); if (!isNaN(n)) return n; return null; }
@@ -298,7 +298,7 @@
         if (scale) {
           addLabel(curLine, formatFeet(lastDistPx * scale));
         } else {
-          curLine.remove(); curEnds.forEach(c => c.remove());
+          // keep the line visible even without a scale
           showToast('Tap Calibrate first to set the scale');
         }
       }

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scale Calibration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #f0ede8; font-family: Inter, sans-serif; font-size: 14px; }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 24px; background: #1a1a1a; border-bottom: 1px solid #2c2c2c;
+      flex-wrap: wrap; position: sticky; top: 0; z-index: 50;
+    }
+    .toolbar h1 { font-size: 1rem; font-weight: 500; }
+    .floor-btns, .zoom-btns { display: flex; gap: 8px; }
+    .floor-btn, .zoom-btn {
+      padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+      border: 1px solid #444; background: #222; color: #aaa;
+    }
+    .floor-btn.active { background: #c9a96e; color: #111; border-color: #c9a96e; font-weight: 600; }
+    .len-input {
+      background: #111; border: 1px solid #444; border-radius: 4px; color: #fff;
+      padding: 7px 10px; width: 120px; font-size: 0.85rem;
+    }
+    .len-input:focus { border-color: #c9a96e; outline: none; }
+    .result {
+      margin-left: auto; font-size: 0.95rem; font-weight: 600; color: #ffae1a;
+      min-width: 150px; text-align: right;
+    }
+    .copy-btn {
+      padding: 8px 18px; background: #c9a96e; color: #111;
+      border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.85rem;
+    }
+    .copy-btn:hover { background: #e0c088; }
+    .copied { background: #4caf7d !important; }
+    .hint { width: 100%; font-size: 0.78rem; color: #888; }
+    .hint b { color: #c9a96e; }
+
+    #stage-wrap { overflow: auto; padding: 0 24px 60px; }
+    .stage { position: relative; display: block; width: fit-content; margin: 24px auto; }
+    .stage img { display: block; filter: invert(1) sepia(0.15) brightness(0.92); }
+    .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+    .handle {
+      position: absolute; width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(255,174,26,0.4); border: 3px solid #ffae1a;
+      transform: translate(-50%, -50%); cursor: grab; z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #fff; user-select: none;
+      touch-action: none;
+    }
+    .handle:active { cursor: grabbing; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>Scale Calibration</h1>
+  <div class="floor-btns">
+    <button class="floor-btn active" onclick="loadFloor('downstairs')">Downstairs</button>
+    <button class="floor-btn" onclick="loadFloor('upstairs')">Upstairs</button>
+  </div>
+  <div class="zoom-btns">
+    <button class="zoom-btn" onclick="zoomBy(0.8)">– Zoom</button>
+    <button class="zoom-btn" onclick="zoomBy(1.25)">+ Zoom</button>
+    <button class="zoom-btn" onclick="fitZoom()">Fit</button>
+  </div>
+  <label>Known length: <input class="len-input" id="len" placeholder="e.g. 10' 2&quot;" oninput="recompute()"></label>
+  <div class="result" id="result">—</div>
+  <button class="copy-btn" onclick="copyOut()">Copy for Claude</button>
+  <div class="hint">Drag the two <b>A</b> / <b>B</b> dots onto the ends of a dimension printed on the plan (zoom in for accuracy), type that dimension's real length, then click <b>Copy for Claude</b> and paste it back to me.</div>
+</div>
+
+<div id="stage-wrap">
+  <div class="stage" id="stage">
+    <img id="fp-img" src="" alt="Floor plan" />
+    <svg id="line-svg" preserveAspectRatio="none"><line id="cal-line" stroke="#ffae1a" stroke-width="3" stroke-dasharray="6 4"/></svg>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  let currentFloor = 'downstairs';
+  let zoom = 1, natW = 0, natH = 0;
+  // handle positions as fractions of the image (0..1)
+  const pts = { A: { x: 0.35, y: 0.5 }, B: { x: 0.65, y: 0.5 } };
+  const computed = {};   // floorKey -> feetPerPx
+
+  const img = document.getElementById('fp-img');
+
+  function loadFloor(floorKey) {
+    currentFloor = floorKey;
+    document.querySelectorAll('.floor-btn').forEach(b =>
+      b.classList.toggle('active', b.textContent.toLowerCase() === floorKey));
+    img.onload = () => { natW = img.naturalWidth; natH = img.naturalHeight; fitZoom(); };
+    img.src = SITE.floors[floorKey].floorplan;
+    if (img.complete && img.naturalWidth) { natW = img.naturalWidth; natH = img.naturalHeight; fitZoom(); }
+    document.getElementById('len').value = '';
+    document.getElementById('result').textContent = '—';
+  }
+
+  function fitZoom() {
+    const avail = window.innerWidth - 80;
+    zoom = Math.min(1.2, avail / natW);
+    applyZoom();
+  }
+  function zoomBy(f) { zoom = Math.max(0.1, Math.min(8, zoom * f)); applyZoom(); }
+
+  function applyZoom() {
+    img.style.width = (natW * zoom) + 'px';
+    img.style.height = 'auto';
+    renderHandles();
+  }
+
+  function renderHandles() {
+    ['A', 'B'].forEach(id => {
+      let h = document.getElementById('h' + id);
+      if (!h) {
+        h = document.createElement('div');
+        h.className = 'handle'; h.id = 'h' + id; h.textContent = id;
+        document.getElementById('stage').appendChild(h);
+        makeDraggable(h, id);
+      }
+      h.style.left = (pts[id].x * img.offsetWidth) + 'px';
+      h.style.top  = (pts[id].y * img.offsetHeight) + 'px';
+    });
+    drawLine();
+  }
+
+  function drawLine() {
+    const svg = document.getElementById('line-svg');
+    svg.setAttribute('width', img.offsetWidth);
+    svg.setAttribute('height', img.offsetHeight);
+    svg.style.width = img.offsetWidth + 'px';
+    svg.style.height = img.offsetHeight + 'px';
+    const l = document.getElementById('cal-line');
+    l.setAttribute('x1', pts.A.x * img.offsetWidth);
+    l.setAttribute('y1', pts.A.y * img.offsetHeight);
+    l.setAttribute('x2', pts.B.x * img.offsetWidth);
+    l.setAttribute('y2', pts.B.y * img.offsetHeight);
+    recompute();
+  }
+
+  function makeDraggable(el, id) {
+    const start = e => {
+      e.preventDefault();
+      const move = ev => {
+        const p = ev.touches ? ev.touches[0] : ev;
+        const r = img.getBoundingClientRect();
+        pts[id].x = Math.max(0, Math.min(1, (p.clientX - r.left) / img.offsetWidth));
+        pts[id].y = Math.max(0, Math.min(1, (p.clientY - r.top) / img.offsetHeight));
+        el.style.left = (pts[id].x * img.offsetWidth) + 'px';
+        el.style.top  = (pts[id].y * img.offsetHeight) + 'px';
+        drawLine();
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+        document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up);
+      };
+      document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+      document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', up);
+    };
+    el.addEventListener('mousedown', start);
+    el.addEventListener('touchstart', start, { passive: false });
+  }
+
+  function parseLength(str) {
+    str = (str || '').trim(); if (!str) return null;
+    let feet = 0, matched = false;
+    const ft = str.match(/(-?\d+(?:\.\d+)?)\s*(?:'|ft\b|feet\b)/i);
+    const inn = str.match(/(-?\d+(?:\.\d+)?)\s*(?:"|in\b|inch\b|inches\b)/i);
+    if (ft) { feet += parseFloat(ft[1]); matched = true; }
+    if (inn) { feet += parseFloat(inn[1]) / 12; matched = true; }
+    if (!matched) { const n = parseFloat(str); return isNaN(n) ? null : n; }
+    return feet;
+  }
+
+  function recompute() {
+    const feet = parseLength(document.getElementById('len').value);
+    const dxNat = (pts.B.x - pts.A.x) * natW;
+    const dyNat = (pts.B.y - pts.A.y) * natH;
+    const distPx = Math.hypot(dxNat, dyNat);
+    const res = document.getElementById('result');
+    if (!feet || distPx < 2) { res.textContent = distPx ? Math.round(distPx) + ' px' : '—'; return; }
+    const fpp = feet / distPx;
+    computed[currentFloor] = fpp;
+    res.textContent = `${Math.round(distPx)} px = ${feet.toFixed(2)} ft → ${fpp.toFixed(5)}`;
+  }
+
+  function copyOut() {
+    const out = JSON.stringify(computed, null, 2);
+    navigator.clipboard.writeText('Set scales.json to:\n' + out);
+    const b = event.target; b.textContent = 'Copied!'; b.classList.add('copied');
+    setTimeout(() => { b.textContent = 'Copy for Claude'; b.classList.remove('copied'); }, 2000);
+  }
+
+  window.addEventListener('resize', () => renderHandles());
+  loadFloor('downstairs');
+</script>
+</body>
+</html>
