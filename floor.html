@@ -170,10 +170,16 @@
       updateReadout();
     });
 
+    // Convert a screen point to natural-pixel image coordinates.
+    // Uses the image's bounding rect (which reliably includes CSS transforms in
+    // all browsers) instead of getScreenCTM(), which Safari computes without
+    // ancestor CSS transforms — that broke drawing while zoomed.
     function toSvg(clientX, clientY) {
-      const pt = measureSvg.createSVGPoint();
-      pt.x = clientX; pt.y = clientY;
-      return pt.matrixTransform(measureSvg.getScreenCTM().inverse());
+      const r = img.getBoundingClientRect();
+      return {
+        x: ((clientX - r.left) / r.width)  * img.naturalWidth,
+        y: ((clientY - r.top)  / r.height) * img.naturalHeight
+      };
     }
 
     function formatFeet(totalFeet) {
