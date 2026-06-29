@@ -65,6 +65,19 @@
     </div>
   </div>
 
+  <!-- Token setup modal (for permanent save) -->
+  <div class="modal-overlay" id="token-modal">
+    <div class="modal-box">
+      <div class="modal-title">Save scale to the site</div>
+      <p class="modal-desc">To save the scale permanently (so it works on every device and never resets), enter your GitHub access token. Saved on this device only.</p>
+      <input class="modal-input" id="token-input" type="password" placeholder="github_pat_..." autocomplete="off" />
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="token-skip">Just this device</button>
+        <button class="modal-btn modal-btn-confirm" id="token-save">Save Everywhere</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
@@ -148,10 +161,19 @@
     }
 
     // ── Measure mode ────────────────────────────────────────────
+    const REPO_OWNER = 'davidalittle1986';
+    const REPO_NAME  = '310-duncaster';
     const SCALE_KEY = `measure_scale_${floorKey}`; // feet per natural pixel
     let measureMode = false;
     let calibrating = false;
+    let bakedScales = {};            // loaded from scales.json (permanent, repo-stored)
     const NS = 'http://www.w3.org/2000/svg';
+
+    // Load permanently-saved scales from the repo
+    fetch('scales.json?t=' + Date.now())
+      .then(r => r.ok ? r.json() : {})
+      .then(j => { bakedScales = j || {}; })
+      .catch(() => {});
 
     const measureToggle = document.getElementById('measure-toggle');
     const measureBar    = document.getElementById('measure-bar');
@@ -160,7 +182,12 @@
     const hotspotSvg    = document.getElementById('hotspot-svg');
     const toast         = document.getElementById('toast');
 
-    function getScale() { const v = parseFloat(localStorage.getItem(SCALE_KEY)); return isNaN(v) ? null : v; }
+    function getScale() {
+      const v = parseFloat(localStorage.getItem(SCALE_KEY));
+      if (!isNaN(v)) return v;
+      const b = parseFloat(bakedScales[floorKey]);
+      return isNaN(b) ? null : b;
+    }
 
     measureToggle.addEventListener('click', () => {
       measureMode = !measureMode;
@@ -339,9 +366,68 @@
       pendingCalibLine = null;
       calibrating = false;
       closeCalibModal();
-      showToast('Scale set! Now drag to measure.');
       updateReadout();
+      // Offer to persist permanently to the repo
+      pendingScale = feetPerPx;
+      if (localStorage.getItem('gh_token')) {
+        savePermanent(feetPerPx);
+      } else {
+        showToast('Scale set on this device.');
+        document.getElementById('token-modal').classList.add('active');
+      }
     });
+
+    // ── Permanent (repo) scale save ─────────────────────────────
+    let pendingScale = null;
+    const tokenModal = document.getElementById('token-modal');
+    document.getElementById('token-skip').addEventListener('click', () => { tokenModal.classList.remove('active'); });
+    document.getElementById('token-save').addEventListener('click', () => {
+      const t = document.getElementById('token-input').value.trim();
+      if (!t) return;
+      localStorage.setItem('gh_token', t);
+      tokenModal.classList.remove('active');
+      if (pendingScale != null) savePermanent(pendingScale);
+    });
+
+    async function githubPut(token, path, contentB64, message, sha) {
+      const body = { message, content: contentB64 };
+      if (sha) body.sha = sha;
+      const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      return res.json();
+    }
+
+    async function savePermanent(feetPerPx) {
+      const token = localStorage.getItem('gh_token');
+      if (!token) return;
+      showToast('Saving scale to the site…');
+      try {
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/scales.json`;
+        let sha = null, data = {};
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.ok) {
+          const j = await res.json();
+          sha = j.sha;
+          try { data = JSON.parse(atob(j.content.replace(/\s/g, ''))); } catch { data = {}; }
+        }
+        data[floorKey] = feetPerPx;
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+        await githubPut(token, 'scales.json', content, `Set ${floorKey} measurement scale`, sha);
+        bakedScales = data;
+        showToast('Saved! Works on every device now.');
+      } catch (err) {
+        if (String(err.message).match(/401|403/)) {
+          localStorage.removeItem('gh_token');
+          showToast('Token invalid — saved on this device only.');
+        } else {
+          showToast('Couldn’t save to site — kept on this device.');
+        }
+      }
+    }
 
     // ── iOS-style pinch / pan ───────────────────────────────────
     const wrapper = document.getElementById('fp-wrapper');
