@@ -532,6 +532,105 @@ a { color: inherit; text-decoration: none; }
   text-transform: uppercase;
 }
 
+/* ─── MEASURE MODE ────────────────────────────────────────── */
+
+.measure-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 7px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.measure-toggle.active {
+  background: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+}
+
+.measure-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* In measure mode: hide hotspots, enable the measure layer */
+body.measuring .hotspot-svg { opacity: 0; pointer-events: none; }
+body.measuring .measure-svg { pointer-events: auto; touch-action: none; }
+
+.m-line {
+  stroke: #ff8c2b;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 3;
+}
+.m-end {
+  fill: #ff8c2b;
+  stroke: #fff;
+  stroke-width: 0;
+}
+.m-label {
+  fill: #fff;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: #000;
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
+.measure-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: #161616;
+  flex-shrink: 0;
+}
+body.measuring .measure-bar { display: flex; }
+
+.measure-readout {
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.measure-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.measure-btn {
+  background: var(--border);
+  border: none;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.measure-btn:active { background: #3a3a3a; }
+#calibrate-btn { background: var(--accent); color: #111; }
+
+/* Hide the hint in measure mode (toolbar shows guidance instead) */
+body.measuring .hotspot-hint { display: none; }
+
 /* ─── UPLOAD FAB ──────────────────────────────────────────── */
 
 .upload-fab {

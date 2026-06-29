@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Floor Plan — 310 Duncaster</title>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="manifest" href="manifest.json" />
@@ -27,6 +27,7 @@
         <span class="nav-sep">›</span>
         <span id="floor-title">—</span>
       </div>
+      <button class="measure-toggle" id="measure-toggle">Measure</button>
     </nav>
     <div class="nav-page-title" id="floor-title-large">—</div>
 
@@ -35,10 +36,37 @@
         <img id="floorplan-img" src="" alt="Floor plan" />
         <svg class="hotspot-svg" id="hotspot-svg" viewBox="0 0 1000 1000" preserveAspectRatio="none">
         </svg>
+        <svg class="measure-svg" id="measure-svg" preserveAspectRatio="none"></svg>
       </div>
-      <p class="hotspot-hint">Tap a room to view construction photos</p>
+      <p class="hotspot-hint" id="hotspot-hint">Tap a room to view construction photos</p>
+    </div>
+
+    <!-- Measure toolbar -->
+    <div class="measure-bar" id="measure-bar">
+      <div class="measure-readout" id="measure-readout">Pinch to zoom · drag to measure</div>
+      <div class="measure-actions">
+        <button class="measure-btn" id="calibrate-btn">Calibrate</button>
+        <button class="measure-btn" id="clear-btn">Clear</button>
+      </div>
     </div>
   </div>
+
+  <!-- Calibration modal -->
+  <div class="modal-overlay" id="calib-modal">
+    <div class="modal-box">
+      <div class="modal-title">Set the scale</div>
+      <p class="modal-desc">You traced a line over a known dimension on the plan. Enter its real length so distances can be calculated.</p>
+      <input class="modal-input" id="calib-input" type="text" inputmode="decimal" placeholder="e.g. 20' 6&quot;  or  20.5" autocomplete="off" />
+      <p class="modal-desc" style="font-size:0.72rem">Accepted: <strong>20</strong> (feet) · <strong>20.5</strong> · <strong>20' 6"</strong> · <strong>6"</strong></p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="calib-cancel">Cancel</button>
+        <button class="modal-btn modal-btn-confirm" id="calib-save">Save Scale</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
 
   <script src="js/config.js"></script>
   <script>
@@ -47,7 +75,7 @@
     if (!floor) location.href = 'index.html';
 
     document.title = `${floor.label} — 310 Duncaster`;
-    document.getElementById('floor-title').textContent      = floor.label;
+    document.getElementById('floor-title').textContent       = floor.label;
     document.getElementById('floor-title-large').textContent = floor.label;
 
     const img = document.getElementById('floorplan-img');
@@ -57,6 +85,7 @@
     const loader     = document.getElementById('loader');
     const loaderFill = document.getElementById('loader-fill');
     const page       = document.getElementById('floor-page');
+    const measureSvg = document.getElementById('measure-svg');
 
     loaderFill.style.width = '30%';
     img.onload = () => {
@@ -68,9 +97,10 @@
         page.style.transition = 'opacity 0.4s';
         setTimeout(() => loader.style.display = 'none', 400);
       }, 300);
+      measureSvg.setAttribute('viewBox', `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
       buildHotspots();
     };
-    if (img.complete) img.onload();
+    if (img.complete && img.naturalWidth) img.onload();
 
     // Build SVG hotspots
     function buildHotspots() {
@@ -99,32 +129,223 @@
         g.appendChild(text);
         svg.appendChild(g);
 
-        g.addEventListener('click', () => navigateToRoom(room, floorKey));
+        g.addEventListener('click', () => { if (!measureMode) navigateToRoom(room, floorKey); });
         g.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') navigateToRoom(room, floorKey);
+          if ((e.key === 'Enter' || e.key === ' ') && !measureMode) navigateToRoom(room, floorKey);
         });
       });
     }
 
     function navigateToRoom(room, floor) {
       const container = document.getElementById('zoom-container');
-      const img       = document.getElementById('floorplan-img');
-      const pctX = room.x / 1000;
-      const pctY = room.y / 1000;
-      const originX = pctX * img.offsetWidth;
-      const originY = pctY * img.offsetHeight;
-      container.style.transformOrigin = `${originX}px ${originY}px`;
+      const pctX = room.x / 1000, pctY = room.y / 1000;
+      container.style.transformOrigin = `${pctX * img.offsetWidth}px ${pctY * img.offsetHeight}px`;
       container.style.transform = 'scale(3.5)';
       container.classList.add('zooming');
-      setTimeout(() => {
-        location.href = `gallery.html#${floor}/${room.id}`;
-      }, 550);
+      setTimeout(() => { location.href = `gallery.html#${floor}/${room.id}`; }, 550);
     }
 
-    // Back-swipe gesture
+    // ── Measure mode ────────────────────────────────────────────
+    const SCALE_KEY = `measure_scale_${floorKey}`; // feet per natural pixel
+    let measureMode = false;
+    let calibrating = false;
+    const NS = 'http://www.w3.org/2000/svg';
+
+    const measureToggle = document.getElementById('measure-toggle');
+    const measureBar    = document.getElementById('measure-bar');
+    const readout       = document.getElementById('measure-readout');
+    const hint          = document.getElementById('hotspot-hint');
+    const hotspotSvg    = document.getElementById('hotspot-svg');
+    const toast         = document.getElementById('toast');
+
+    function getScale() { const v = parseFloat(localStorage.getItem(SCALE_KEY)); return isNaN(v) ? null : v; }
+
+    measureToggle.addEventListener('click', () => {
+      measureMode = !measureMode;
+      document.body.classList.toggle('measuring', measureMode);
+      measureToggle.classList.toggle('active', measureMode);
+      measureToggle.textContent = measureMode ? 'Done' : 'Measure';
+      hint.textContent = measureMode
+        ? 'Pinch to zoom · drag one finger to measure'
+        : 'Tap a room to view construction photos';
+      if (measureMode) updateReadout();
+    });
+
+    function updateReadout(msg) {
+      if (msg) { readout.textContent = msg; return; }
+      readout.textContent = getScale()
+        ? 'Pinch to zoom · drag to measure'
+        : 'Tap Calibrate, then trace a known dimension';
+    }
+
+    function showToast(m) { toast.textContent = m; toast.classList.add('active'); setTimeout(() => toast.classList.remove('active'), 2600); }
+
+    document.getElementById('calibrate-btn').addEventListener('click', () => {
+      calibrating = true;
+      updateReadout('Trace a printed dimension on the plan…');
+      showToast('Now drag a line over a known dimension');
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      [...measureSvg.querySelectorAll('.m-line,.m-end,.m-label,.m-labelbg')].forEach(n => n.remove());
+      updateReadout();
+    });
+
+    // Map a screen point to SVG (natural-pixel) coordinates
+    function toSvg(clientX, clientY) {
+      const pt = measureSvg.createSVGPoint();
+      pt.x = clientX; pt.y = clientY;
+      return pt.matrixTransform(measureSvg.getScreenCTM().inverse());
+    }
+
+    // Length parsing / formatting
+    function parseLength(str) {
+      str = str.trim();
+      if (!str) return null;
+      let feet = 0, matched = false;
+      const ftMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:'|ft|feet|f)\b/i);
+      const inMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:"|in|inch|inches|")/i);
+      if (ftMatch) { feet += parseFloat(ftMatch[1]); matched = true; }
+      if (inMatch) { feet += parseFloat(inMatch[1]) / 12; matched = true; }
+      if (!matched) { const n = parseFloat(str); if (!isNaN(n)) return n; return null; }
+      return feet;
+    }
+
+    function formatFeet(totalFeet) {
+      let feet = Math.floor(totalFeet);
+      let inches = Math.round((totalFeet - feet) * 12);
+      if (inches === 12) { feet += 1; inches = 0; }
+      return `${feet}' ${inches}"`;
+    }
+
+    // Drawing state
+    let drawing = false, startPt = null, curLine = null, curEnds = [], lastDistPx = 0;
+    const strokeW = () => Math.max(2, (img.naturalWidth || 2000) / 320);
+    const endR    = () => Math.max(4, (img.naturalWidth || 2000) / 170);
+    const fontPx  = () => Math.max(10, (img.naturalWidth || 2000) / 42);
+
+    function beginDraw(clientX, clientY) {
+      startPt = toSvg(clientX, clientY);
+      drawing = true;
+      curLine = document.createElementNS(NS, 'line');
+      curLine.setAttribute('class', 'm-line');
+      curLine.setAttribute('x1', startPt.x); curLine.setAttribute('y1', startPt.y);
+      curLine.setAttribute('x2', startPt.x); curLine.setAttribute('y2', startPt.y);
+      curLine.setAttribute('stroke-width', strokeW());
+      measureSvg.appendChild(curLine);
+      curEnds = [];
+      [0,1].forEach(() => {
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('class', 'm-end');
+        c.setAttribute('r', endR());
+        c.setAttribute('cx', startPt.x); c.setAttribute('cy', startPt.y);
+        measureSvg.appendChild(c); curEnds.push(c);
+      });
+    }
+
+    function moveDraw(clientX, clientY) {
+      if (!drawing) return;
+      const p = toSvg(clientX, clientY);
+      curLine.setAttribute('x2', p.x); curLine.setAttribute('y2', p.y);
+      curEnds[1].setAttribute('cx', p.x); curEnds[1].setAttribute('cy', p.y);
+      lastDistPx = Math.hypot(p.x - startPt.x, p.y - startPt.y);
+      const scale = getScale();
+      if (scale && !calibrating) updateReadout(formatFeet(lastDistPx * scale));
+    }
+
+    function endDraw() {
+      if (!drawing) return;
+      drawing = false;
+      if (lastDistPx < 4) { // tap, not a drag — discard
+        curLine.remove(); curEnds.forEach(c => c.remove());
+        return;
+      }
+      if (calibrating) {
+        // keep the line briefly; ask for its real length
+        pendingCalibLine = { line: curLine, ends: curEnds, px: lastDistPx };
+        openCalibModal();
+      } else {
+        const scale = getScale();
+        if (scale) {
+          addLabel(curLine, formatFeet(lastDistPx * scale));
+        } else {
+          curLine.remove(); curEnds.forEach(c => c.remove());
+          showToast('Tap Calibrate first to set the scale');
+        }
+      }
+    }
+
+    function addLabel(line, text) {
+      const mx = (parseFloat(line.getAttribute('x1')) + parseFloat(line.getAttribute('x2'))) / 2;
+      const my = (parseFloat(line.getAttribute('y1')) + parseFloat(line.getAttribute('y2'))) / 2;
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('class', 'm-label');
+      t.setAttribute('x', mx); t.setAttribute('y', my);
+      t.setAttribute('font-size', fontPx());
+      t.textContent = text;
+      measureSvg.appendChild(t);
+    }
+
+    // Touch handlers for drawing (single finger only)
+    const wrapperEl = document.getElementById('fp-wrapper');
+    wrapperEl.addEventListener('touchstart', e => {
+      if (!measureMode || e.touches.length !== 1) { if (drawing) cancelDraw(); return; }
+      beginDraw(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    wrapperEl.addEventListener('touchmove', e => {
+      if (!measureMode || !drawing) return;
+      if (e.touches.length !== 1) { cancelDraw(); return; }
+      e.preventDefault();
+      moveDraw(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: false });
+    wrapperEl.addEventListener('touchend', e => {
+      if (measureMode && drawing) endDraw();
+    }, { passive: true });
+
+    function cancelDraw() {
+      if (!drawing) return;
+      drawing = false;
+      curLine.remove(); curEnds.forEach(c => c.remove());
+    }
+
+    // Mouse handlers (desktop testing)
+    wrapperEl.addEventListener('mousedown', e => { if (measureMode) beginDraw(e.clientX, e.clientY); });
+    wrapperEl.addEventListener('mousemove', e => { if (measureMode && drawing) moveDraw(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', () => { if (measureMode && drawing) endDraw(); });
+
+    // Calibration modal
+    let pendingCalibLine = null;
+    const calibModal = document.getElementById('calib-modal');
+    const calibInput = document.getElementById('calib-input');
+    function openCalibModal() { calibInput.value = ''; calibModal.classList.add('active'); setTimeout(() => calibInput.focus(), 100); }
+    function closeCalibModal() { calibModal.classList.remove('active'); }
+
+    document.getElementById('calib-cancel').addEventListener('click', () => {
+      if (pendingCalibLine) { pendingCalibLine.line.remove(); pendingCalibLine.ends.forEach(c => c.remove()); pendingCalibLine = null; }
+      calibrating = false;
+      closeCalibModal();
+      updateReadout();
+    });
+
+    document.getElementById('calib-save').addEventListener('click', () => {
+      const feet = parseLength(calibInput.value);
+      if (!feet || feet <= 0 || !pendingCalibLine) { showToast('Enter a valid length'); return; }
+      const feetPerPx = feet / pendingCalibLine.px;
+      localStorage.setItem(SCALE_KEY, String(feetPerPx));
+      // remove the calibration reference line
+      pendingCalibLine.line.remove(); pendingCalibLine.ends.forEach(c => c.remove());
+      pendingCalibLine = null;
+      calibrating = false;
+      closeCalibModal();
+      showToast('Scale set! Now drag to measure.');
+      updateReadout();
+    });
+
+    // Back-swipe gesture (disabled while measuring)
     let touchStartX = 0;
     document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
     document.addEventListener('touchend', e => {
+      if (measureMode) return;
       const dx = e.changedTouches[0].clientX - touchStartX;
       if (dx > 80 && touchStartX < 40) history.back();
     }, { passive: true });
@@ -132,32 +353,26 @@
     // Pinch-to-zoom on floor plan
     const wrapper  = document.getElementById('fp-wrapper');
     let fpScale    = 1, fpLastDist = 0;
-    let fpOriginX  = 0, fpOriginY  = 0;
     let isPinching = false;
 
     wrapper.addEventListener('touchstart', e => {
       if (e.touches.length === 2) {
         isPinching = true;
-        fpLastDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        fpOriginX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        fpOriginY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        if (drawing) cancelDraw();
+        fpLastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const zc = document.getElementById('zoom-container');
         const rect = zc.getBoundingClientRect();
-        zc.style.transformOrigin = `${fpOriginX - rect.left}px ${fpOriginY - rect.top}px`;
+        zc.style.transformOrigin = `${midX - rect.left}px ${midY - rect.top}px`;
       }
     }, { passive: true });
 
     wrapper.addEventListener('touchmove', e => {
       if (e.touches.length === 2 && isPinching) {
         e.preventDefault();
-        const dist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        fpScale = Math.min(5, Math.max(1, fpScale * (dist / fpLastDist)));
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        fpScale = Math.min(6, Math.max(1, fpScale * (dist / fpLastDist)));
         document.getElementById('zoom-container').style.transform = `scale(${fpScale})`;
         fpLastDist = dist;
       }
@@ -169,8 +384,7 @@
         if (fpScale <= 1.05) {
           fpScale = 1;
           const zc = document.getElementById('zoom-container');
-          zc.style.transform = '';
-          zc.style.transformOrigin = '';
+          zc.style.transform = ''; zc.style.transformOrigin = '';
         }
       }
     }, { passive: true });
