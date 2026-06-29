@@ -573,12 +573,12 @@ body.measuring .measure-svg { pointer-events: auto; touch-action: none; }
 body.measuring .floorplan-wrapper,
 body.measuring .floorplan-zoom-container { touch-action: none; }
 
-.measure-svg { filter: drop-shadow(0 0 2px rgba(0,0,0,0.95)); }
+.measure-svg { filter: drop-shadow(0 0 1.5px rgba(0,0,0,0.95)); }
 .m-line {
   stroke: #ffae1a;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
-  stroke-width: 5;
+  stroke-width: 2.5;
 }
 .m-end {
   fill: #ffae1a;
