@@ -138,10 +138,12 @@
 
     function navigateToRoom(room, floor) {
       const container = document.getElementById('zoom-container');
-      const pctX = room.x / 1000, pctY = room.y / 1000;
-      container.style.transformOrigin = `${pctX * img.offsetWidth}px ${pctY * img.offsetHeight}px`;
-      container.style.transform = 'scale(3.5)';
-      container.classList.add('zooming');
+      const s = 3.5;
+      const cx = (room.x / 1000) * img.offsetWidth;
+      const cy = (room.y / 1000) * img.offsetHeight;
+      const ntx = cx - cx * s, nty = cy - cy * s;
+      container.classList.add('animating', 'zooming');
+      container.style.transform = `translate(${ntx}px, ${nty}px) scale(${s})`;
       setTimeout(() => { location.href = `gallery.html#${floor}/${room.id}`; }, 550);
     }
 
@@ -341,52 +343,138 @@
       updateReadout();
     });
 
-    // Back-swipe gesture (disabled while measuring)
-    let touchStartX = 0;
-    document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
-    document.addEventListener('touchend', e => {
-      if (measureMode) return;
-      const dx = e.changedTouches[0].clientX - touchStartX;
-      if (dx > 80 && touchStartX < 40) history.back();
-    }, { passive: true });
+    // ── iOS-style pinch / pan ───────────────────────────────────
+    const wrapper = document.getElementById('fp-wrapper');
+    const zc      = document.getElementById('zoom-container');
+    let scale = 1, tx = 0, ty = 0;          // current transform state
+    let lastDist = 0, lastMidX = 0, lastMidY = 0;
+    let lastPanX = 0, lastPanY = 0;
+    let pinching = false, panning = false;
+    const MAX_SCALE = 6;
 
-    // Pinch-to-zoom on floor plan
-    const wrapper  = document.getElementById('fp-wrapper');
-    let fpScale    = 1, fpLastDist = 0;
-    let isPinching = false;
+    function applyTransform() {
+      zc.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    }
+
+    function clampPan() {
+      // keep the image from being dragged entirely out of view
+      const baseW = img.offsetWidth, baseH = img.offsetHeight;
+      const maxX = Math.max(0, (baseW * scale - wrapper.clientWidth) / 2 + 60);
+      const maxY = Math.max(0, (baseH * scale - wrapper.clientHeight) / 2 + 60);
+      tx = Math.min(maxX, Math.max(-maxX, tx));
+      ty = Math.min(maxY, Math.max(-maxY, ty));
+    }
+
+    function midpoint(t0, t1) {
+      const r = wrapper.getBoundingClientRect();
+      return { x: (t0.clientX + t1.clientX) / 2 - r.left, y: (t0.clientY + t1.clientY) / 2 - r.top };
+    }
 
     wrapper.addEventListener('touchstart', e => {
       if (e.touches.length === 2) {
-        isPinching = true;
+        pinching = true; panning = false;
         if (drawing) cancelDraw();
-        fpLastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const zc = document.getElementById('zoom-container');
-        const rect = zc.getBoundingClientRect();
-        zc.style.transformOrigin = `${midX - rect.left}px ${midY - rect.top}px`;
+        zc.classList.remove('animating');
+        lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        const m = midpoint(e.touches[0], e.touches[1]);
+        lastMidX = m.x; lastMidY = m.y;
+      } else if (e.touches.length === 1 && !measureMode && scale > 1.01) {
+        panning = true;
+        const r = wrapper.getBoundingClientRect();
+        lastPanX = e.touches[0].clientX - r.left;
+        lastPanY = e.touches[0].clientY - r.top;
+        zc.classList.remove('animating');
       }
     }, { passive: true });
 
     wrapper.addEventListener('touchmove', e => {
-      if (e.touches.length === 2 && isPinching) {
+      if (pinching && e.touches.length === 2) {
         e.preventDefault();
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        fpScale = Math.min(6, Math.max(1, fpScale * (dist / fpLastDist)));
-        document.getElementById('zoom-container').style.transform = `scale(${fpScale})`;
-        fpLastDist = dist;
+        const m = midpoint(e.touches[0], e.touches[1]);
+        let desired = Math.min(MAX_SCALE, Math.max(1, scale * (dist / lastDist)));
+        const factor = desired / scale;
+        // zoom toward the finger midpoint
+        tx = m.x - (m.x - tx) * factor;
+        ty = m.y - (m.y - ty) * factor;
+        scale = desired;
+        // pan with the midpoint movement
+        tx += m.x - lastMidX;
+        ty += m.y - lastMidY;
+        lastDist = dist; lastMidX = m.x; lastMidY = m.y;
+        clampPan();
+        applyTransform();
+      } else if (panning && e.touches.length === 1) {
+        e.preventDefault();
+        const r = wrapper.getBoundingClientRect();
+        const px = e.touches[0].clientX - r.left;
+        const py = e.touches[0].clientY - r.top;
+        tx += px - lastPanX; ty += py - lastPanY;
+        lastPanX = px; lastPanY = py;
+        clampPan();
+        applyTransform();
       }
     }, { passive: false });
 
     wrapper.addEventListener('touchend', e => {
-      if (e.touches.length < 2) {
-        isPinching = false;
-        if (fpScale <= 1.05) {
-          fpScale = 1;
-          const zc = document.getElementById('zoom-container');
-          zc.style.transform = ''; zc.style.transformOrigin = '';
+      if (e.touches.length === 0) {
+        pinching = false; panning = false;
+        if (scale <= 1.02) {
+          scale = 1; tx = 0; ty = 0;
+          zc.classList.add('animating');
+          applyTransform();
+          setTimeout(() => zc.classList.remove('animating'), 300);
+        } else {
+          clampPan();
+          zc.classList.add('animating');
+          applyTransform();
+          setTimeout(() => zc.classList.remove('animating'), 300);
+        }
+      } else if (e.touches.length === 1) {
+        // dropped from two fingers to one — continue as pan if zoomed
+        pinching = false;
+        if (!measureMode && scale > 1.01) {
+          panning = true;
+          const r = wrapper.getBoundingClientRect();
+          lastPanX = e.touches[0].clientX - r.left;
+          lastPanY = e.touches[0].clientY - r.top;
         }
       }
+    }, { passive: true });
+
+    // Double-tap to zoom in/out (iOS Photos style)
+    let lastTap = 0;
+    wrapper.addEventListener('touchend', e => {
+      if (measureMode || e.changedTouches.length !== 1) return;
+      const now = Date.now();
+      if (now - lastTap < 300 && !pinching && !panning) {
+        const r = wrapper.getBoundingClientRect();
+        const fx = e.changedTouches[0].clientX - r.left;
+        const fy = e.changedTouches[0].clientY - r.top;
+        zc.classList.add('animating');
+        if (scale > 1.2) { scale = 1; tx = 0; ty = 0; }
+        else {
+          const target = 3;
+          const factor = target / scale;
+          tx = fx - (fx - tx) * factor;
+          ty = fy - (fy - ty) * factor;
+          scale = target; clampPan();
+        }
+        applyTransform();
+        setTimeout(() => zc.classList.remove('animating'), 300);
+        lastTap = 0;
+      } else {
+        lastTap = now;
+      }
+    }, { passive: true });
+
+    // Back-swipe gesture (only when not zoomed and not measuring)
+    let touchStartX = 0;
+    document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    document.addEventListener('touchend', e => {
+      if (measureMode || scale > 1.02) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (dx > 80 && touchStartX < 40) history.back();
     }, { passive: true });
   </script>
 </body>
