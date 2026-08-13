@@ -10,6 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="310 Duncaster" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <script>document.documentElement.dataset.theme = localStorage.getItem('theme') || 'dark';</script>
 </head>
 <body>
   <!-- Loading screen -->
@@ -117,10 +118,13 @@
 
     function navigateToRoom(room, floor) {
       const s = 3.5;
-      const cx = (room.x / 1000) * img.offsetWidth;
-      const cy = (room.y / 1000) * img.offsetHeight;
+      const imgW = img.offsetWidth, imgH = img.offsetHeight;
+      const rx = (room.x / 1000) * imgW, ry = (room.y / 1000) * imgH;
+      // center-origin focal zoom: keep the room point fixed as we scale up
+      const ntx = (1 - s) * (rx - imgW / 2);
+      const nty = (1 - s) * (ry - imgH / 2);
       zc.classList.add('animating', 'zooming');
-      zc.style.transform = `translate(${cx - cx * s}px, ${cy - cy * s}px) scale(${s})`;
+      zc.style.transform = `translate(${ntx}px, ${nty}px) scale(${s})`;
       setTimeout(() => { location.href = `gallery.html#${floor}/${room.id}`; }, 550);
     }
 
@@ -287,10 +291,12 @@
         e.preventDefault();
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const m = mid(e.touches[0], e.touches[1]);
-        let desired = Math.min(MAX_SCALE, Math.max(1, scale * (dist / lastDist)));
+        const cx = wrapper.clientWidth / 2, cy = wrapper.clientHeight / 2;
+        const desired = Math.min(MAX_SCALE, Math.max(1, scale * (dist / lastDist)));
         const factor = desired / scale;
-        tx = m.x - (m.x - tx) * factor;
-        ty = m.y - (m.y - ty) * factor;
+        // center-origin focal zoom toward the finger midpoint (matches iOS Photos)
+        tx = (1 - factor) * (m.x - cx) + factor * tx;
+        ty = (1 - factor) * (m.y - cy) + factor * ty;
         scale = desired;
         tx += m.x - lastMidX; ty += m.y - lastMidY;
         lastDist = dist; lastMidX = m.x; lastMidY = m.y;
