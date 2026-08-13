@@ -67,6 +67,11 @@ a { color: inherit; text-decoration: none; }
 
 body { transition: background 0.3s, color 0.3s; }
 
+/* Theme toggle sitting inside a nav bar (floor / gallery pages) */
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.nav-bar .theme-toggle { position: static; top: auto; right: auto; width: 38px; height: 38px; }
+.nav-bar .theme-toggle svg { width: 18px; height: 18px; }
+
 /* ─── INDEX ───────────────────────────────────────────────── */
 
 .home {
@@ -582,7 +587,6 @@ body { transition: background 0.3s, color 0.3s; }
 /* ─── MEASURE MODE ────────────────────────────────────────── */
 
 .measure-toggle {
-  margin-left: auto;
   background: none;
   border: 1px solid var(--border);
   color: var(--accent);
