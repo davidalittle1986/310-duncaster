@@ -144,10 +144,17 @@
         if (!res.ok) throw new Error();
         const manifest = await res.json();
         const entries = manifest[`${fk}/${rid}`] || [];
-        photos = entries.map(e => typeof e === 'string'
-          ? { src: `photos/${fk}/${rid}/${e}`, date: null }
-          : { src: `photos/${fk}/${rid}/${e.file}`, date: e.date || null }
-        );
+        photos = entries.map(e => {
+          const file = typeof e === 'string' ? e : e.file;
+          const date = typeof e === 'object' ? (e.date || null) : null;
+          // Uploaded-from-phone photos are named IMG_<13-digit timestamp>.jpg
+          const m = file.match(/^IMG_(\d{13})\.jpe?g$/i);
+          const uploaded = (typeof e === 'object' && e.uploaded === true) || !!m;
+          const ts = m ? parseInt(m[1], 10) : 0;
+          return { src: `photos/${fk}/${rid}/${file}`, date, uploaded, ts };
+        });
+        // Your uploads first (newest first), then the original photos in order
+        photos.sort((a, b) => (a.uploaded === b.uploaded) ? (b.ts - a.ts) : (a.uploaded ? -1 : 1));
       } catch { photos = []; }
 
       if (photos.length === 0) {
@@ -492,7 +499,7 @@
       const key = `${fk}/${rid}`;
       if (!manifest[key]) manifest[key] = [];
       const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      manifest[key].push({ file: filename, date });
+      manifest[key].push({ file: filename, date, uploaded: true });
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(manifest, null, 2))));
       await githubPut(token, 'photos/manifest.json', content, 'Update manifest', data.sha);
     }
