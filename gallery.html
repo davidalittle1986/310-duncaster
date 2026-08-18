@@ -171,7 +171,9 @@
         const item = document.createElement('div');
         item.className = 'gallery-item';
         const img = document.createElement('img');
-        img.src = src; img.alt = `Photo ${i+1}`; img.loading = 'lazy';
+        img.src = src.replace(/^photos\//, 'thumbs/');   // small thumbnail
+        img.onerror = () => { img.onerror = null; img.src = src; }; // fall back to full if no thumb yet
+        img.alt = `Photo ${i+1}`; img.loading = 'lazy'; img.decoding = 'async';
         item.appendChild(img);
         item.addEventListener('click', () => openLightbox(i));
         grid.appendChild(item);
@@ -417,10 +419,10 @@
         const file = files[i];
         setUploadStatus(`Uploading ${i+1} of ${files.length}…`, `Processing ${file.name}`, ((i / files.length) * 60) + 5);
         try {
-          const { base64, filename } = await resizeAndEncode(file);
-          setUploadStatus(`Uploading ${i+1} of ${files.length}…`, 'Uploading photo…', ((i / files.length) * 60) + 30);
-          const path = `photos/${floorKey}/${roomId}/${filename}`;
-          await githubPut(token, path, base64, `Add photo to ${room.label}`);
+          const { base64, thumb64, filename } = await resizeAndEncode(file);
+          setUploadStatus(`Uploading ${i+1} of ${files.length}…`, 'Uploading photo…', ((i / files.length) * 60) + 25);
+          await githubPut(token, `photos/${floorKey}/${roomId}/${filename}`, base64, `Add photo to ${room.label}`);
+          await githubPut(token, `thumbs/${floorKey}/${roomId}/${filename}`, thumb64, `Add thumbnail for ${room.label}`);
           setUploadStatus(`Uploading ${i+1} of ${files.length}…`, 'Updating manifest…', ((i / files.length) * 60) + 55);
           await updateManifest(token, floorKey, roomId, filename);
           succeeded++;
@@ -462,17 +464,18 @@
         const img = new Image();
         img.onerror = reject;
         img.onload = () => {
-          const maxPx = 1920;
-          const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-          const canvas = document.createElement('canvas');
-          canvas.width  = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          const base64  = dataUrl.split(',')[1];
-          const ts = Date.now();
-          const filename = `IMG_${ts}.jpg`;
-          resolve({ base64, filename });
+          const render = (maxPx, quality) => {
+            const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width  = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', quality).split(',')[1];
+          };
+          const base64  = render(1920, 0.85);   // full-size
+          const thumb64 = render(400, 0.72);    // grid thumbnail
+          const filename = `IMG_${Date.now()}.jpg`;
+          resolve({ base64, thumb64, filename });
         };
         img.src = URL.createObjectURL(file);
       });
