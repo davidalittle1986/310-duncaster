@@ -127,8 +127,10 @@
       }, 200);
     }).catch(err => { loader.querySelector('.loader-title').textContent = 'Failed to load plan'; });
 
-    // Scale (feet per SVG point) — verified on both floors
-    const VECTOR_SCALES = { downstairs: 0.064516, upstairs: 0.055675 };
+    // Scale (feet per SVG point). Both plans are drawn at 1/4"=1'-0", i.e. exactly
+    // 18 points per foot at 72dpi → 1/18 ft/pt. Verified via the printed dimension
+    // chains (e.g. two 5'-0" segments measured exactly 90 pts each).
+    const VECTOR_SCALES = { downstairs: 1/18, upstairs: 1/18 };
     function getScale() { return VECTOR_SCALES[floorKey]; }
 
     // ── Hotspots ────────────────────────────────────────────────
