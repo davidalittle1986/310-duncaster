@@ -237,7 +237,7 @@
 
     // ── Gestures ─────────────────────────────────────────────────
     const wrapper = document.getElementById('fp-wrapper');
-    let gesture = null, lastPinchDist = 0, grabUser = null;
+    let gesture = null, lastPinchDist = 0, grabUser = null, pinchAnchorUser = null;
     const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
     function clampVB() {
       const minW = BASE.w / 12, maxW = BASE.w;
@@ -246,12 +246,16 @@
       vb.x = clamp(vb.x, BASE.x - mx, BASE.x + BASE.w - vb.w + mx);
       vb.y = clamp(vb.y, BASE.y - my, BASE.y + BASE.h - vb.h + my);
     }
+    function startPinch(e) {
+      gesture = 'pinch'; if (drawing) cancelDraw();
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      pinchAnchorUser = toUser(midX, midY);
+    }
     wrapper.addEventListener('touchstart', e => {
-      if (e.touches.length === 2) {
-        gesture = 'pinch'; if (drawing) cancelDraw();
-        lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        e.preventDefault();
-      } else if (e.touches.length === 1) {
+      if (e.touches.length === 2) { e.preventDefault(); startPinch(e); }
+      else if (e.touches.length === 1) {
         if (measureMode) { gesture = 'draw'; beginDraw(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
         else { gesture = 'pan'; grabUser = toUser(e.touches[0].clientX, e.touches[0].clientY); }
       }
@@ -261,11 +265,19 @@
         e.preventDefault();
         const mid = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const before = toUser(mid.x, mid.y);
-        const f = dist / lastPinchDist; lastPinchDist = dist;
-        vb.w /= f; vb.h /= f; clampVB(); applyVB();
-        const after = toUser(mid.x, mid.y);
-        vb.x += before.x - after.x; vb.y += before.y - after.y; clampVB(); applyVB();
+        // 1. Zoom by the change in finger distance
+        const f = dist / lastPinchDist;
+        vb.w /= f; vb.h /= f;
+        // 2. Translate so the anchor point (user coord under previous mid) is
+        //    now under the current mid. This handles focal-point zoom AND
+        //    two-finger panning in one step — content follows the fingers.
+        const under = toUser(mid.x, mid.y);
+        vb.x += pinchAnchorUser.x - under.x;
+        vb.y += pinchAnchorUser.y - under.y;
+        clampVB(); applyVB();
+        // Save for next move — where the anchor actually landed (accounts for clamp).
+        lastPinchDist = dist;
+        pinchAnchorUser = toUser(mid.x, mid.y);
       } else if (gesture === 'draw' && e.touches.length === 1) {
         e.preventDefault(); moveDraw(e.touches[0].clientX, e.touches[0].clientY);
       } else if (gesture === 'pan' && e.touches.length === 1) {
@@ -278,6 +290,7 @@
       if (gesture === 'draw') endDraw();
       if (e.touches.length === 0) gesture = null;
       else if (e.touches.length === 1 && gesture === 'pinch') { gesture = measureMode ? null : 'pan'; if (gesture === 'pan') grabUser = toUser(e.touches[0].clientX, e.touches[0].clientY); }
+      else if (e.touches.length === 2 && gesture !== 'pinch') { startPinch(e); }
     }, { passive: true });
 
     let lastTap = 0;
