@@ -191,7 +191,18 @@
       [...measG.querySelectorAll('*')].forEach(n => n.remove()); updateReadout();
     });
 
-    function toUser(cx, cy) { const pt = planSvg.createSVGPoint(); pt.x = cx; pt.y = cy; return pt.matrixTransform(planSvg.getScreenCTM().inverse()); }
+    // Explicit screen→user mapping (doesn't depend on getScreenCTM, which iOS
+    // Safari may not update synchronously after a viewBox change — that was
+    // making the pinch focal-point stale, causing "zoom-from-center" behavior).
+    // Matches SVG preserveAspectRatio="xMidYMid meet".
+    function toUser(cx, cy) {
+      const r = planSvg.getBoundingClientRect();
+      const s = Math.min(r.width / vb.w, r.height / vb.h);
+      const offX = (r.width  - vb.w * s) / 2;
+      const offY = (r.height - vb.h * s) / 2;
+      return { x: vb.x + (cx - r.left - offX) / s,
+               y: vb.y + (cy - r.top  - offY) / s };
+    }
     function fmt(ft) { let f = Math.floor(ft), i = Math.round((ft - f) * 12); if (i === 12) { f++; i = 0; } return `${f}' ${i}"`; }
 
     let drawing = false, startPt = null, curLine = null, curEnds = [], lastDist = 0;
