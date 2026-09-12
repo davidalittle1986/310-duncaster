@@ -620,10 +620,6 @@ body.measuring .measure-svg { pointer-events: auto; touch-action: none; }
 body.measuring .floorplan-wrapper,
 body.measuring .floorplan-zoom-container { touch-action: none; }
 
-/* Inline vector floor plan (viewBox zoom) */
-.plan-svg { width: 100%; height: 100%; display: block; touch-action: none; }
-#plan-content { filter: var(--fp-filter); }
-#measure-layer { filter: drop-shadow(0 0 1.5px rgba(0,0,0,0.95)); }
 .measure-svg { filter: drop-shadow(0 0 1.5px rgba(0,0,0,0.95)); }
 .m-line {
   stroke: #ffae1a;
