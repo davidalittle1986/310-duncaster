@@ -187,6 +187,7 @@
       measureToggle.classList.toggle('active', measureMode);
       measureToggle.textContent = measureMode ? 'Done' : 'Measure';
       hint.textContent = measureMode ? 'Pinch to zoom · drag one finger to measure' : 'Tap a room to view construction photos';
+      hotG.style.display = measureMode ? 'none' : '';   // hide room circles while measuring (belt-and-suspenders w/ CSS)
       updateReadout();
     });
     function updateReadout(msg) { readout.textContent = msg || 'Pinch to zoom · drag to measure'; }
