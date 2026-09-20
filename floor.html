@@ -21,6 +21,8 @@
     .fp-plan-layer svg, .fp-overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
     .fp-overlay { pointer-events: none; touch-action: none; }
     .fp-plan-svg { touch-action: none; }
+    /* Hide room hotspots while measuring, for a clean view of the spaces */
+    body.measuring #hotspot-layer { display: none; }
   </style>
 </head>
 <body>
