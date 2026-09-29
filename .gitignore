@@ -1,0 +1,11 @@
+# Architect drawings / CAD never go in this public repo (3D viewer uses only data/*.json)
+Arch Drawings/
+*.pdf
+*.dwg
+*.dxf
+
+# local tooling
+tools/debug/
+node_modules/
+__pycache__/
+.venv/

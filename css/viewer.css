@@ -1,0 +1,195 @@
+/* 310 Duncaster — 3D viewer (standalone; does not touch css/style.css) */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root, :root[data-theme="light"] {
+  --bg:        #f4f1ea;
+  --surface:   rgba(255, 255, 255, 0.86);
+  --solid:     #ffffff;
+  --track:     rgba(32, 29, 24, 0.07);
+  --border:    #ddd6c8;
+  --text:      #201d18;
+  --muted:     #6f6a62;
+  --accent:    #9c7a3c;
+  --accent-h:  #b8934f;
+  --shadow:    0 6px 24px rgba(40, 32, 18, 0.12);
+}
+:root[data-theme="dark"] {
+  --bg:        #111111;
+  --surface:   rgba(26, 26, 26, 0.84);
+  --solid:     #2a2a2a;
+  --track:     rgba(255, 255, 255, 0.07);
+  --border:    #2c2c2c;
+  --text:      #f0ede8;
+  --muted:     #8a857e;
+  --accent:    #c9a96e;
+  --accent-h:  #e0c088;
+  --shadow:    0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+body { position: fixed; inset: 0; }
+button, select, input { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+/* ─── Stage ─────────────────────────────────────────────── */
+.app, .stage { position: fixed; inset: 0; }
+.stage canvas { display: block; touch-action: none; outline: none; }
+
+/* ─── Top bar ───────────────────────────────────────────── */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 10px) 8px calc(env(safe-area-inset-left) + 10px);
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.bar-row { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.bar-row > * { pointer-events: auto; }
+.bar-row:first-child { justify-content: center; position: relative; }
+
+.seg {
+  display: inline-flex; align-items: stretch;
+  padding: 3px; gap: 2px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+.seg > button, .seg > a {
+  border: 0; background: transparent; cursor: pointer;
+  padding: 7px 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 500; letter-spacing: 0.01em;
+  color: var(--muted); white-space: nowrap;
+  display: flex; align-items: center;
+  transition: background 0.2s, color 0.2s;
+}
+.seg > .on { background: var(--text); color: var(--bg); }
+.seg-main > .on { background: var(--accent); color: #fff; }
+:root[data-theme="dark"] .seg-main > .on { color: #111; }
+.seg > button:not(.on):active, .seg > a:active { background: var(--track); }
+
+.icon-btn {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn .icon-sun { display: none; }
+:root[data-theme="dark"] .icon-btn .icon-sun { display: block; }
+:root[data-theme="dark"] .icon-btn .icon-moon { display: none; }
+
+.bar-controls { justify-content: space-between; }
+.bar-controls .seg > button { padding: 7px 11px; }
+
+.rooms-pick {
+  position: relative; display: inline-flex; align-items: center; gap: 4px;
+  padding: 0 12px; height: 38px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer;
+  max-width: 34vw; min-width: 0;
+}
+.rooms-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rooms-pick svg { width: 14px; height: 14px; flex: none; color: var(--accent); }
+.rooms-pick select {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  font-size: 16px; /* keeps iOS from zooming */
+}
+
+@media (max-width: 380px) {
+  .seg > button, .seg > a { padding: 7px 9px; font-size: 12.5px; }
+  .bar-controls .seg > button { padding: 7px 8px; }
+  .rooms-pick { padding: 0 9px; font-size: 12.5px; }
+}
+
+/* ─── Room labels (Plan mode) ───────────────────────────── */
+.room-label {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 13px; line-height: 1; white-space: nowrap;
+  color: #201d18;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(156, 122, 60, 0.45);
+  padding: 4px 8px 5px; border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(40, 32, 18, 0.12);
+  pointer-events: none;
+}
+:root[data-theme="dark"] .room-label { color: #f0ede8; background: rgba(26, 26, 26, 0.88); border-color: rgba(201, 169, 110, 0.5); }
+
+/* ─── Walk hint / loading ───────────────────────────────── */
+.hint {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 18px); z-index: 10;
+  padding: 9px 16px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  font-size: 13px; color: var(--muted); letter-spacing: 0.02em; white-space: nowrap;
+  pointer-events: none;
+}
+.loading {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', Georgia, serif; font-size: 18px; color: var(--muted);
+  pointer-events: none;
+}
+
+/* ─── Password gate ─────────────────────────────────────── */
+.gate {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: var(--bg);
+}
+.gate-card {
+  width: 100%; max-width: 320px; text-align: center;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.gate-card h1 {
+  font-family: 'Playfair Display', Georgia, serif; font-weight: 400;
+  font-size: 32px; letter-spacing: 0.01em; color: var(--text);
+}
+.gate-sub {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 14px;
+}
+.gate-card input {
+  height: 48px; padding: 0 16px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--solid);
+  font-size: 16px; text-align: center; outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.gate-card input:focus { border-color: var(--accent); }
+.gate-card button {
+  height: 48px; border-radius: 12px; border: 0; cursor: pointer;
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 15px; letter-spacing: 0.02em;
+}
+.gate-card button:active { background: var(--accent-h); }
+.gate-error { min-height: 18px; font-size: 13px; color: #b4503c; }
+.gate-card.shake { animation: shake 0.4s; }
+@keyframes shake {
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+@media (max-width: 500px) {
+  .room-label {
+    font-size: 10.5px; line-height: 1.12; text-align: center;
+    white-space: normal; max-width: 86px;
+    padding: 3px 7px 4px; border-radius: 10px;
+  }
+}
